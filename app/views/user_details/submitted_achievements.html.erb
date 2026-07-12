@@ -1,0 +1,384 @@
+<div class="main-content bg-gray-50 min-h-screen">
+  <div class="bg-gray-50 min-h-screen">
+    <div class="bg-gray-100 px-6 py-4 border-b border-gray-200 rounded-t-xl">
+      <div class="flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-center">
+        <h2 class="text-4xl font-bold text-gray-800 flex items-center">
+          <i class="fas fa-check-circle me-3 text-green-600 text-2xl"></i>
+          Submitted view achievements
+        </h2>
+
+        <div class="flex flex-wrap items-center gap-3">
+          <%= form_with url: submitted_achievements_user_details_path, method: :get, local: true, class: "flex flex-wrap items-center gap-2" do |form| %>
+            <%= form.label :financial_year, "Financial year", class: "text-sm font-semibold text-gray-700" %>
+            <%= form.select :financial_year,
+                options_for_select(@financial_years, @selected_financial_year),
+                {},
+                class: "bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700",
+                onchange: "this.form.submit();" %>
+
+            <%= form.label :month, "Month", class: "text-sm font-semibold text-gray-700" %>
+            <%= form.select :month,
+                options_for_select(@active_month_options, @selected_month),
+                {},
+                class: "submitted-month-select bg-white border border-gray-300 rounded-lg px-4 py-3 text-base font-semibold text-gray-800 min-w-[180px]",
+                onchange: "this.form.submit();" %>
+          <% end %>
+
+          <% if @has_submitted_achievements %>
+            <%= link_to quarterly_edit_all_user_details_path(financial_year: @selected_financial_year, month: @selected_month),
+                        class: "bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-all duration-200 flex items-center shadow-md hover:shadow-lg" do %>
+              <i class="fas fa-edit me-2"></i>
+              <span class="font-semibold">Monthly edit</span>
+            <% end %>
+          <% end %>
+        </div>
+      </div>
+    </div>
+
+    <% if @has_submitted_achievements && @selected_month.present? %>
+      <%
+        month = @selected_month.to_s.downcase
+        month_label = short_month_label(month)
+        month_header_class = quarter_header_class(@selected_quarter)
+        month_cell_class = quarter_background_class(@selected_quarter)
+      %>
+      <div class="p-6">
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <p class="text-sm text-gray-600">
+            Showing submitted achievements for <span class="font-semibold text-gray-800"><%= month_label %></span>
+            (<%= @selected_financial_year %>)
+          </p>
+          <% if @selected_quarter.present? %>
+            <span class="inline-flex items-center rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-800">
+              <%= @selected_quarter %> | Quality PLI quarter
+            </span>
+          <% end %>
+        </div>
+
+        <div class="table-wrapper overflow-auto bg-white rounded-lg border border-gray-200 shadow-sm">
+          <% visible_details = @user_details.select { |detail| submitted_month_row_visible?(detail, month) } %>
+          <% if visible_details.any? %>
+          <table class="table table-hover w-full min-w-full">
+            <thead class="bg-gray-800">
+              <tr>
+                <th class="px-4 py-3 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600">S.No</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-white tracking-wider border-r border-gray-600">Key result indicators</th>
+                <th class="px-4 py-3 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600">Unit of measurement</th>
+                <th class="px-4 py-3 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600"><%= annual_target_fy_label(@selected_financial_year) %></th>
+                <th class="px-4 py-3 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600 <%= month_header_class %>"><%= month_label %> Target</th>
+                <th class="px-4 py-3 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600 <%= month_header_class %>"><%= month_label %> Achievement</th>
+                <th class="px-4 py-3 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600 <%= month_header_class %>">% Progress</th>
+                <th class="px-4 py-3 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600 <%= month_header_class %>"><%= employee_remarks_column_label %></th>
+                <th class="px-4 py-3 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600 <%= month_header_class %>"><%= manager_remarks_column_label("L1") %></th>
+                <% @display_observer_levels.each do |observer_level| %>
+                  <th class="px-4 py-3 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600 bg-sky-700"><%= manager_remarks_column_label(observer_column_label(observer_level)) %></th>
+                <% end %>
+                <th class="px-4 py-3 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600 bg-gray-700">Details</th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              <% visible_index = 0 %>
+              <% visible_details.each do |detail| %>
+                <%
+                  visible_index += 1
+                  existing_achievements = detail.achievements.index_by { |achievement| achievement.month.to_s.downcase }
+                  target_value = clean_spreadsheet_display_value(detail.send(month.to_sym))
+                  achievement_record = existing_achievements[month]
+                  achievement = achievement_record&.achievement
+                  remarks = achievement_record&.employee_remarks
+                  achievement_remark = achievement_record&.achievement_remark
+                  l1_remarks = achievement_remark&.l1_remarks
+                  reporting_manager_remarks = achievement_remark&.reporting_manager_remarks.presence || l1_remarks
+                  progress_percentage = if target_value.present? && target_value.to_s.strip != "0" && target_value.to_s.delete(",").to_f.positive? && achievement.present?
+                    ((achievement.to_s.delete(",").to_f / target_value.to_s.delete(",").to_f) * 100.0).round(2)
+                  end
+                  month_summary_payload = submitted_month_review_summary(
+                    detail.employee_detail,
+                    @user_details,
+                    month,
+                    @selected_financial_year
+                  )
+                  row_observer_levels = observer_levels_for_display(detail.employee_detail)
+                  row_observer_remarks = @display_observer_levels.each_with_object({}) do |observer_level, remarks_by_level|
+                    next unless row_observer_levels.include?(observer_level)
+
+                    remark_column = observer_remark_column(observer_level)
+                    remarks_by_level[observer_level] = achievement_remark&.public_send(remark_column)
+                  end
+                %>
+                <tr class="<%= visible_index.even? ? 'bg-gray-50' : 'bg-white' %> hover:bg-gray-100 transition-colors duration-200">
+                  <td class="px-4 py-3 text-sm text-gray-800 border-r border-gray-200 text-center"><%= visible_index %></td>
+                  <td class="px-4 py-3 text-sm text-gray-800 border-r border-gray-200"><%= detail.activity.activity_name %></td>
+                  <td class="px-4 py-3 text-sm text-gray-800 border-r border-gray-200 text-center"><%= detail.activity.unit.presence || "-" %></td>
+                  <td class="px-4 py-3 text-sm text-gray-800 border-r border-gray-200 text-center"><%= annual_target_display(detail.activity) %></td>
+                  <td class="px-4 py-3 text-sm text-gray-800 text-center border-r border-gray-200 <%= month_cell_class %>">
+                    <span class="<%= target_value.presence ? 'text-gray-800 font-medium' : 'text-gray-400' %>">
+                      <%= target_value.presence || "-" %>
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-sm text-center border-r border-gray-200 <%= month_cell_class %>">
+                    <span class="<%= achievement.presence ? 'text-green-700 font-semibold bg-green-50 px-2 py-1 rounded' : 'text-gray-400' %>">
+                      <%= achievement.presence || "-" %>
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-sm text-center border-r border-gray-200 <%= month_cell_class %>">
+                    <span class="<%= progress_percentage ? 'text-emerald-700 font-semibold bg-emerald-50 px-2 py-1 rounded' : 'text-gray-400' %>">
+                      <%= progress_percentage ? "#{format('%.2f', progress_percentage)}%" : "-" %>
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-sm text-center border-r border-gray-200 <%= month_cell_class %>">
+                    <span class="<%= remarks.presence ? 'text-blue-700 text-xs' : 'text-gray-400' %>">
+                      <%= remarks.presence || "-" %>
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-sm text-center border-r border-gray-200 <%= month_cell_class %>">
+                    <span class="<%= reporting_manager_remarks.presence ? 'text-indigo-700 text-xs' : 'text-gray-400' %>">
+                      <%= reporting_manager_remarks.presence || "-" %>
+                    </span>
+                  </td>
+                  <% @display_observer_levels.each do |observer_level| %>
+                    <% obs_remarks = row_observer_remarks[observer_level] %>
+                    <td class="px-4 py-3 text-sm text-center border-r border-gray-200 bg-sky-50">
+                      <% if row_observer_levels.include?(observer_level) %>
+                        <span class="<%= obs_remarks.present? ? 'text-sky-700 text-xs' : 'text-gray-400' %>">
+                          <%= obs_remarks.presence || "-" %>
+                        </span>
+                      <% else %>
+                        <span class="text-gray-300">-</span>
+                      <% end %>
+                    </td>
+                  <% end %>
+                  <td class="px-4 py-3 text-sm text-center border-r border-gray-200">
+                    <button type="button"
+                            class="monthly-details-btn review-eye-button"
+                            title="View <%= month_label %> final remarks"
+                            data-month-summary="<%= month_summary_payload.to_json.gsub('"', '&quot;') %>">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+                        <circle cx="12" cy="12" r="2.5" />
+                      </svg>
+                    </button>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+          <% else %>
+            <div class="p-12 text-center text-gray-600">
+              <i class="fas fa-calendar-times text-5xl text-gray-400 mb-4"></i>
+              <p class="text-lg font-semibold text-gray-800">No activities for <%= month_label %></p>
+              <p class="mt-2">This month has no target or submitted achievement data.</p>
+            </div>
+          <% end %>
+        </div>
+      </div>
+
+      <div id="detailsModal" class="fixed inset-0 hidden z-50 flex items-center justify-center bg-black/40">
+        <div class="bg-white rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+          <div class="bg-gray-800 text-white px-6 py-4 rounded-t-lg">
+            <div class="flex justify-between items-center">
+              <h3 class="text-xl font-semibold">Final remarks</h3>
+              <div class="flex items-center space-x-3">
+                <span id="modalQuarter" class="bg-gray-600 text-gray-200 px-3 py-1 rounded-full text-sm font-medium"></span>
+                <button id="closeModal" type="button" class="text-white hover:text-gray-200 transition-colors">
+                  <i class="fas fa-times text-xl"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-6 bg-gray-50">
+            <div id="finalRemarksContent" class="space-y-4"></div>
+            <div id="noFinalRemarksMessage" class="hidden rounded-lg border border-gray-200 bg-white p-6 text-center text-gray-500">
+              No final remarks available for this month.
+            </div>
+          </div>
+
+          <div class="bg-gray-50 px-6 py-4 rounded-b-lg">
+            <button id="closeModalBtn" type="button" class="w-full bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg transition-all duration-200 flex items-center justify-center">
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        function initializeSubmittedAchievementsModal() {
+          const modal = document.getElementById('detailsModal');
+          const closeModal = document.getElementById('closeModal');
+          const closeModalBtn = document.getElementById('closeModalBtn');
+          const detailButtons = document.querySelectorAll('.monthly-details-btn');
+          const finalRemarksContent = document.getElementById('finalRemarksContent');
+          const noFinalRemarksMessage = document.getElementById('noFinalRemarksMessage');
+
+          if (!modal) return;
+
+          function parseDatasetJson(value) {
+            if (!value) return {};
+            try {
+              return JSON.parse(value.replace(/&quot;/g, '"'));
+            } catch (error) {
+              return {};
+            }
+          }
+
+          function hasDisplayValue(value) {
+            return value !== null && value !== undefined && String(value).trim() !== '' && String(value).trim() !== '-';
+          }
+
+          function remarkCard(title, remarks, cardClass) {
+            if (!hasDisplayValue(remarks)) return '';
+            return `
+              <div class="rounded-lg border p-5 ${cardClass}">
+                <h4 class="font-semibold text-base mb-3">${title}</h4>
+                <div class="text-gray-800 text-sm whitespace-pre-wrap">${remarks}</div>
+              </div>
+            `;
+          }
+
+          function renderFinalRemarks(summary) {
+            const cards = [];
+            const observers = summary.observer_summaries || [];
+
+            observers.forEach((observer) => {
+              const card = remarkCard(
+                `${observer.label} Final Remarks`,
+                observer.final_remarks,
+                'border-sky-200 bg-sky-50'
+              );
+              if (card) cards.push(card);
+            });
+
+            const l1Card = remarkCard(
+              `L1 Final Remarks${summary.l1_name ? ` - ${summary.l1_name}` : ''}`,
+              summary.l1_final_remarks,
+              'border-yellow-200 bg-yellow-50'
+            );
+            if (l1Card) cards.push(l1Card);
+
+            const pli = summary.quarterly_pli || {};
+            const pliCard = remarkCard(
+              `Quality PLI Final Remarks${pli.quarter ? ` - ${pli.quarter}` : ''}`,
+              pli.final_remarks,
+              'border-teal-200 bg-teal-50'
+            );
+            if (pliCard) cards.push(pliCard);
+
+            if (!finalRemarksContent || !noFinalRemarksMessage) return;
+
+            if (cards.length) {
+              finalRemarksContent.innerHTML = cards.join('');
+              finalRemarksContent.classList.remove('hidden');
+              noFinalRemarksMessage.classList.add('hidden');
+            } else {
+              finalRemarksContent.innerHTML = '';
+              finalRemarksContent.classList.add('hidden');
+              noFinalRemarksMessage.classList.remove('hidden');
+            }
+          }
+
+          function openModal(button) {
+            const summaryData = parseDatasetJson(button.dataset.monthSummary);
+            const monthTitle = summaryData.month_label || 'Month';
+
+            document.getElementById('modalQuarter').textContent = monthTitle;
+            renderFinalRemarks(summaryData);
+
+            modal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+          }
+
+          function closeModalFunction() {
+            modal.classList.add('hidden');
+            document.body.style.overflow = '';
+          }
+
+          detailButtons.forEach((button) => {
+            button.onclick = () => openModal(button);
+          });
+
+          if (closeModal) closeModal.onclick = closeModalFunction;
+          if (closeModalBtn) closeModalBtn.onclick = closeModalFunction;
+          modal.onclick = (event) => {
+            if (event.target === modal) closeModalFunction();
+          };
+          document.onkeydown = (event) => {
+            if (event.key === 'Escape' && !modal.classList.contains('hidden')) closeModalFunction();
+          };
+        }
+
+        document.addEventListener('DOMContentLoaded', initializeSubmittedAchievementsModal);
+        document.addEventListener('turbo:load', initializeSubmittedAchievementsModal);
+        document.addEventListener('turbo:render', initializeSubmittedAchievementsModal);
+        if (document.readyState !== 'loading') initializeSubmittedAchievementsModal();
+      </script>
+    <% else %>
+      <div class="p-6">
+        <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-12 text-center">
+          <div class="mb-6">
+            <i class="fas fa-file-alt text-6xl text-gray-400"></i>
+          </div>
+          <h3 class="text-2xl font-bold text-gray-800 mb-4">No submitted data available</h3>
+          <p class="text-gray-600 text-lg mb-8 max-w-md mx-auto">
+            You haven't submitted any achievements for <%= @selected_financial_year %><% if @selected_month.present? %> in <%= short_month_label(@selected_month) %><% end %> yet.
+          </p>
+          <div class="flex justify-center">
+            <%= link_to get_user_detail_user_details_path(financial_year: @selected_financial_year),
+                        class: "bg-gray-600 hover:bg-gray-700 text-white px-8 py-3 rounded-lg transition-all duration-300 flex items-center shadow-md hover:shadow-lg" do %>
+              <i class="fas fa-plus mr-2"></i>
+              <span class="font-semibold">Submit your achievements</span>
+            <% end %>
+          </div>
+        </div>
+      </div>
+    <% end %>
+  </div>
+</div>
+
+<style>
+.main-content {
+  margin-left: 240px;
+  padding: 2rem;
+  overflow-x: auto;
+  min-height: 100vh;
+}
+
+.submitted-month-select {
+  min-height: 3rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 1024px) {
+  .main-content {
+    margin-left: 0;
+    padding: 1rem;
+  }
+}
+
+.review-eye-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  border: 1px solid #7dd3fc;
+  background: #e0f2fe;
+  color: #0369a1;
+  box-shadow: 0 2px 8px rgba(3, 105, 161, 0.18);
+  transition: background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.review-eye-button:hover {
+  background: #bae6fd;
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(3, 105, 161, 0.24);
+}
+
+.review-eye-button svg {
+  width: 1rem;
+  height: 1rem;
+}
+</style>

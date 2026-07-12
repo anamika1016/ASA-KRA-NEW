@@ -1,0 +1,99 @@
+<div class="login-network-page">
+  <div class="login-network-page__background" aria-hidden="true">
+    <span class="network-orbit orbit-1"></span>
+    <span class="network-orbit orbit-2"></span>
+    <span class="network-orbit orbit-3"></span>
+    <span class="network-orbit orbit-4"></span>
+    <span class="network-orbit orbit-5"></span>
+    <span class="network-orbit orbit-6"></span>
+
+    <div class="network-person person-1">
+      <span class="network-person__avatar avatar-sky"></span>
+    </div>
+    <div class="network-person person-2">
+      <span class="network-person__avatar avatar-indigo"></span>
+    </div>
+    <div class="network-person person-3 person-large">
+      <span class="network-person__avatar avatar-cobalt"></span>
+    </div>
+    <div class="network-person person-4">
+      <span class="network-person__avatar avatar-sand"></span>
+    </div>
+    <div class="network-person person-5">
+      <span class="network-person__avatar avatar-teal"></span>
+    </div>
+    <div class="network-person person-6">
+      <span class="network-person__avatar avatar-navy"></span>
+    </div>
+    <div class="network-person person-7">
+      <span class="network-person__avatar avatar-rose"></span>
+    </div>
+    <div class="network-person person-8">
+      <span class="network-person__avatar avatar-mint"></span>
+    </div>
+  </div>
+
+  <div class="login-network-card">
+    <section class="login-network-hero">
+      <div class="login-network-hero__slider" aria-hidden="true">
+        <div class="hero-slide hero-slide--one">
+          <%= image_tag "pexels-mizunokozuki-12899140.jpg", class: "hero-slide__image", alt: "", loading: "eager" %>
+        </div>
+        <div class="hero-slide hero-slide--two">
+          <%= image_tag "pexels-n-voitkevich-5412159.jpg", class: "hero-slide__image", alt: "", loading: "eager" %>
+        </div>
+      </div>
+
+      <div class="login-network-hero__content">
+        <div class="login-network-hero__brand">
+          <div>
+            <p class="login-network-hero__eyebrow">Performance Network</p>
+            <h1>Welcome back</h1>
+          </div>
+        </div>
+
+        <p class="login-network-hero__copy">
+          A cleaner sign-in experience with the connected-team style you shared, while keeping your login behavior unchanged.
+        </p>
+
+        <div class="login-network-hero__indicators" aria-hidden="true">
+          <span class="hero-indicator hero-indicator--one"></span>
+          <span class="hero-indicator hero-indicator--two"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="login-network-form-panel">
+      <div class="login-network-form-panel__header">
+        <span class="login-network-form-panel__eyebrow">Password Recovery</span>
+        <h2>Forgot your password?</h2>
+        <p>Enter your registered email and we will send reset instructions.</p>
+      </div>
+
+      <% if resource.errors.any? %>
+        <div class="alert alert-danger">
+          <ul class="mb-0">
+            <% resource.errors.full_messages.each do |msg| %>
+              <li><%= msg %></li>
+            <% end %>
+          </ul>
+        </div>
+      <% end %>
+
+      <%= form_for(resource, as: resource_name, url: password_path(resource_name), html: { method: :post, data: { turbo: false }, class: "login-network-form" }) do |f| %>
+        <div class="login-network-form__field">
+          <%= f.label :email, class: "form-label" %>
+          <%= f.email_field :email, autofocus: true, autocomplete: "email", class: "form-control", placeholder: "Enter your registered email" %>
+        </div>
+
+        <div class="login-network-form__actions">
+          <%= f.submit "Send Reset Instructions", class: "btn btn-auth" %>
+        </div>
+      <% end %>
+
+      <div class="login-form-links">
+        <%= render "devise/shared/links" %>
+      </div>
+    </section>
+  </div>
+</div>

@@ -1,0 +1,72 @@
+<div class="min-h-screen pl-64 pr-4 pt-4 pb-12 overflow-x-auto bg-gray-100">
+  <div class="w-full max-w-7xl mx-auto bg-white p-8 rounded-xl shadow-lg">
+    <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">Employee Data View</h2>
+
+    <!-- Employee Basic Info -->
+    <div class="grid grid-cols-2 gap-6 text-sm mb-6">
+      <div><strong>Employee ID:</strong> <%= @employee_detail.employee_id %></div>
+      <div><strong>Name:</strong> <%= @employee_detail.employee_name %></div>
+      <div><strong>Post:</strong> <%= @employee_detail.post %></div>
+      <div><strong>Department:</strong> <%= @employee_detail.department %></div>
+      <div><strong>L1:</strong> <%= @employee_detail.l1_employer_name %></div>
+      <div><strong>L2:</strong> <%= @employee_detail.l2_employer_name %></div>
+    </div>
+
+    <!-- Existing Data Display -->
+    <% if @user_details.any? %>
+      <div class="card mt-4">
+        <div class="card-header bg-dark text-white">
+          <h5 class="mb-0"><i class="fas fa-database me-2"></i>Existing Data</h5>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-bordered table-sm">
+              <thead class="table-dark">
+                <tr>
+                  <th>S.No</th>
+                  <th>Department</th>
+                  <th>Key result indicators</th>
+                  <th>Unit of measurement</th>
+                  <th><%= annual_target_fy_label(@selected_financial_year) %></th>
+                  <th>APR</th>
+                  <th>MAY</th>
+                  <th>JUN</th>
+                  <th>JUL</th>
+                  <th>AUG</th>
+                  <th>SEP</th>
+                  <th>OCT</th>
+                  <th>NOV</th>
+                  <th>DEC</th>
+                  <th>JAN</th>
+                  <th>FEB</th>
+                  <th>MAR</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% @user_details.each_with_index do |detail, detail_index| %>
+                  <tr>
+                    <td><%= detail_index + 1 %></td>
+                    <td><%= detail.department&.department_type %></td>
+                    <td><%= detail.activity&.activity_name %></td>
+                    <td><%= detail.activity&.unit %></td>
+                    <td><%= annual_target_display(detail.activity) %></td>
+                    <% %i[april may june july august september october november december january february march].each do |month| %>
+                      <td><%= target_display_value(detail.public_send(month)) %></td>
+                    <% end %>
+                    <td>
+                      <%= link_to "Edit", edit_user_detail_path(detail), class: "btn btn-sm btn-outline-secondary me-1" %>
+                      <%= link_to "Delete", user_detail_path(detail), method: :delete, data: { confirm: "Are you sure?" }, class: "btn btn-sm btn-outline-danger" %>
+                    </td>
+                  </tr>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    <% else %>
+      <div class="alert alert-warning mt-4">No existing data found for this employee.</div>
+    <% end %>
+  </div>
+</div>

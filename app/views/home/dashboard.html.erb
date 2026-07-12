@@ -1,0 +1,2184 @@
+<div class="main-content annual-dashboard min-h-screen">
+  <div class="dashboard-shell">
+    <div class="hero-strip">
+      <div class="welcome-panel">
+        <h2>
+          <%= @dashboard_mode == :admin ? "Welcome to the ASA360 leadership dashboard" : "Welcome to your ASA360 assessment dashboard" %>
+        </h2>
+        <p>
+          <%= @dashboard_mode == :admin ? "Monitor annual scores, pulse assessments, and performance actions for every employee from one professional workspace." : "Review your annual score, pulse assessment, quarterly remarks, and recommended actions from one clean workspace." %>
+        </p>
+
+        <div class="hero-tags">
+          <%= link_to "Annual Review", "#annual-review-section", class: "hero-tag hero-menu-tag" %>
+          <% if @dashboard_mode == :admin %>
+            <%= link_to "Pulse Score", "#pulse-score-section", class: "hero-tag hero-menu-tag" %>
+          <% else %>
+            <%= link_to "Score Range", "#action-guidance-section", class: "hero-tag hero-menu-tag" %>
+            <%= link_to "Pulse Check", "#pulse-score-section", class: "hero-tag hero-menu-tag" %>
+          <% end %>
+          <%= link_to "COMPOSITE PERFORMANCE SCORE", "#summary-box-section", class: "hero-tag hero-menu-tag" %>
+          <%= link_to "Export Excel", export_dashboard_xlsx_path(format: :xlsx, financial_year: @selected_financial_year), class: "hero-tag export-tag" %>
+        </div>
+
+        <%= form_with url: dashboard_path, method: :get, local: true, class: "financial-year-filter" do |form| %>
+          <%= form.label :financial_year, "Financial Year" %>
+          <%= form.select :financial_year,
+              options_for_select(@financial_years, @selected_financial_year),
+              {},
+              onchange: "this.form.submit();" %>
+        <% end %>
+      </div>
+
+      <div class="time-panel">
+        <div class="clock-shell">
+          <div class="clock-meta">
+            <span id="dashboardGreeting">Good Afternoon</span>
+            <p id="dashboardDate">Loading date...</p>
+            <small class="clock-note">Live dashboard time</small>
+          </div>
+
+          <div class="clock-ring">
+            <div class="clock-orbit">
+              <span class="ring-dot ring-dot-one"></span>
+              <span class="ring-dot ring-dot-two"></span>
+            </div>
+            <div class="clock-ring-inner">
+              <div class="clock-time-stack">
+                <div class="clock-time-row">
+                  <div class="clock-time" id="dashboardTime">12:00</div>
+                  <span class="clock-meridiem" id="dashboardMeridiem">PM</span>
+                </div>
+                <div class="clock-seconds" id="dashboardSeconds">:00</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <%
+      fmt_pct = ->(value, precision = 2) { "#{number_with_precision(value, precision: precision, strip_insignificant_zeros: true)}%" }
+      fmt_num = ->(value, precision = 1) { number_with_precision(value, precision: precision, strip_insignificant_zeros: true) }
+      quarter_summaries = Array(@quarter_summaries)
+      employee_department = @dashboard_employee_department.presence || @user_details&.first&.department&.department_type.presence || @employee_detail&.department.presence || "N/A"
+      pulse_dimensions = pulse_dimension_rows_for(@dashboard_pulse_scores).map do |dimension|
+        score = dimension[:score]
+        dimension.merge(
+          weight: 3,
+          weighted_score: score.present? ? ((score.to_f / 5.0) * 3.0).round(2) : nil
+        )
+      end
+      pulse_raw_percentage = if @dashboard_pulse_available && @dashboard_pulse_scores&.dig(:total_score).present?
+        ((@dashboard_pulse_scores[:total_score].to_f / 25.0) * 100.0).round(2)
+      end
+      pulse_total_score = if @dashboard_pulse_scores&.dig(:total_score).present?
+        fmt_num.call(@dashboard_pulse_scores[:total_score], 1)
+      end
+      composite_pulse_percentage = pulse_raw_percentage.to_f
+      render_rating_badge = lambda do |rating_details|
+        next "-" unless rating_details.present?
+
+        stars_markup = (1..rating_details[:rating].to_i).map do |index|
+          %(<span class="star-icon star-icon-#{index}">★</span>)
+        end.join
+
+        %(
+          <span class="star-rating #{rating_details[:className]}">
+            <strong>#{rating_details[:rating]}</strong>
+            <span class="star-cluster">(<span class="star-seq">#{stars_markup}</span>)</span>
+          </span>
+        ).html_safe
+      end
+      employee_composite = if @dashboard_mode != :admin && @dashboard_summary_scores.present?
+        composite_category_details(composite_display_total(annual_percentage: @annual_percentage, pulse_total_score: @dashboard_pulse_scores[:total_score]))
+      end
+    %>
+
+    <% if @dashboard_mode == :admin %>
+      <% if @employee_rows.any? %>
+        <div class="annual-box" id="annual-review-section">
+          <div class="box-header">
+            <div>
+              <h2>SECTION A: Annually / Weightage : 75%</h2>
+              <p>Sabhi users ka annual score sirf un quarters ke L1 percentage ke hisab se hai jisme KRA score available hai. Formula: Annual Score = scored quarters total / scored quarters count.</p>
+            </div>
+            <%= link_to "Export", export_dashboard_section_xlsx_path("annual", format: :xlsx, financial_year: @selected_financial_year), class: "section-export-btn" %>
+          </div>
+
+          <div class="table-wrap">
+            <table class="annual-table admin-table">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Code</th>
+                  <th>Department</th>
+                  <th>Q1</th>
+                  <th>Q2</th>
+                  <th>Q3</th>
+                  <th>Q4</th>
+                  <th>%</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% @employee_rows.each do |row| %>
+                  <tr>
+                    <td><strong><%= row[:employee_name] %></strong></td>
+                    <td><%= row[:employee_code] %></td>
+                    <td><%= row[:department] %></td>
+                    <% row[:quarter_summaries].each do |quarter| %>
+                      <td><span class="score-chip"><%= "#{compact_number(quarter[:percentage])}%" %></span></td>
+                    <% end %>
+                    <td><span class="score-chip percentage-chip"><%= "#{compact_number(row[:annual_percentage])}%" %></span></td>
+                  </tr>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      <% else %>
+        <div class="empty-dashboard">
+          <h2>No user data found</h2>
+          <p><%= @selected_financial_year %> ke liye abhi kisi bhi employee ka annual data available nahi hai.</p>
+        </div>
+      <% end %>
+    <% else %>
+      <% if @employee_detail.present? %>
+        <div class="summary-grid employee-summary-grid">
+          <div class="stat-card total-card">
+            <span>Employee</span>
+            <strong><%= @employee_detail&.employee_name.presence || current_user.email %></strong>
+            <small class="stat-subtext"><%= @employee_detail&.employee_code.presence || "Code unavailable" %></small>
+          </div>
+          <div class="stat-card percentage-card">
+            <span>Department</span>
+            <strong><%= employee_department %></strong>
+            <small class="stat-subtext">Review period dashboard</small>
+          </div>
+          <div class="stat-card final-card">
+            <span>Section A Score</span>
+            <strong><%= "#{compact_number(@annual_percentage)}%" %></strong>
+            <small class="stat-subtext">KRA weightage 75%</small>
+          </div>
+        </div>
+
+        <div class="annual-box employee-kra-box" id="annual-review-section">
+          <div class="box-header">
+            <div>
+              <h2>SECTION A: Annually / Weightage : 75%</h2>
+              <p>Quarter-wise annual score for your dashboard. Formula: Annual Score = scored quarters total / scored quarters count.</p>
+            </div>
+            <%= link_to "Export", export_dashboard_section_xlsx_path("annual", format: :xlsx, financial_year: @selected_financial_year), class: "section-export-btn" %>
+          </div>
+
+          <div class="employee-meta-grid">
+            <div class="employee-meta-card">
+              <span>Employee Name</span>
+              <strong><%= @employee_detail&.employee_name.presence || current_user.email %></strong>
+            </div>
+            <div class="employee-meta-card">
+              <span>Emp Code</span>
+              <strong><%= @employee_detail&.employee_code.presence || "N/A" %></strong>
+            </div>
+            <div class="employee-meta-card">
+              <span>Department</span>
+              <strong><%= employee_department %></strong>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="annual-table employee-kra-table">
+              <thead>
+                <tr>
+                  <th>Quarter</th>
+                  <th>KRA Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% if quarter_summaries.any? %>
+                  <% quarter_summaries.each do |quarter| %>
+                    <tr>
+                      <td><strong><%= quarter[:name] %></strong></td>
+                      <td><span class="score-chip"><%= "#{compact_number(quarter[:percentage])}%" %></span></td>
+                    </tr>
+                  <% end %>
+                <% else %>
+                  <tr>
+                    <td colspan="2" class="empty-state">No quarterly annual data available.</td>
+                  </tr>
+                <% end %>
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td><strong>Annual Average</strong></td>
+                  <td><span class="score-chip percentage-chip"><%= "#{compact_number(@annual_percentage)}%" %></span></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        <div class="remarks-panel score-guide employee-guide-panel" id="action-guidance-section">
+          <div class="box-header">
+            <div>
+              <h2>PULSE SCORE RANGE</h2>
+              <p>Pulse score band, rating, and recommended action guide.</p>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="guide-table">
+              <thead>
+                <tr>
+                  <th>Total / 25 Range</th>
+                  <th>Band</th>
+                  <th>Rating</th>
+                  <th>Recommended Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% score_range_rows.each do |row| %>
+                  <tr>
+                    <td><%= row[:score_range] %></td>
+                    <td><%= row[:band] %></td>
+                    <td><%= render_rating_badge.call(score_rating_details(row[:rating_value])) %></td>
+                    <td><%= row[:action] %></td>
+                  </tr>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="employee-sections-grid">
+          <div class="pulse-score-card employee-pulse-card" id="pulse-score-section">
+            <div class="box-header employee-section-header">
+              <div>
+                <h2>SECTION B - PULSE CHECK / Weightage : 25%</h2>
+                <p>Pulse survey scores with raw percentage and overall category.</p>
+              </div>
+              <%= link_to "Export", export_dashboard_section_xlsx_path("pulse", format: :xlsx, financial_year: @selected_financial_year), class: "section-export-btn pulse-export-btn" %>
+            </div>
+
+            <div class="table-wrap">
+              <table class="compact-metric-table employee-metric-table">
+                <thead>
+                  <tr>
+                    <th>Pulse Dimension</th>
+                    <th>Score (1-5)</th>
+                    <th>Rating</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% pulse_dimensions.each do |dimension| %>
+                    <tr>
+                      <td><%= dimension[:label] %></td>
+                      <td><%= dimension[:score].presence || "-" %></td>
+                      <td>
+                        <% if dimension[:rating_text].present? && dimension[:score].present? %>
+                          <% rating_details = score_rating_details(dimension[:score]) %>
+                          <%= render_rating_badge.call(rating_details) %>
+                        <% else %>
+                          -
+                        <% end %>
+                      </td>
+                    </tr>
+                  <% end %>
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td><strong>PULSE TOTAL</strong></td>
+                    <td colspan="2"><strong><%= pulse_raw_percentage.present? ? "Total -> #{pulse_total_score}/25 | Pulse Raw -> #{fmt_pct.call(pulse_raw_percentage)}" : "Pending assessment" %></strong></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <div class="metric-summary-row">
+              <span class="summary-chip neutral-summary-chip"><%= pulse_raw_percentage.present? ? "Raw #{fmt_pct.call(pulse_raw_percentage)}" : "Raw Pending" %></span>
+              <span class="summary-chip pulse-summary-chip">Weighted <%= fmt_num.call(@dashboard_summary_scores[:pulse_score], 2) %>/25</span>
+              <% if @dashboard_pulse_category.present? %>
+                <span class="summary-chip annual-summary-chip"><%= @dashboard_pulse_category[:category] %></span>
+              <% end %>
+            </div>
+
+            <div class="single-remark-box employee-remark-box">
+              <div class="dashboard-remark-heading">Pulse Remarks</div>
+              <% if @dashboard_pulse_section_remarks.present? %>
+                <p><%= @dashboard_pulse_section_remarks %></p>
+              <% else %>
+                <p class="empty-state">No pulse remarks available yet.</p>
+              <% end %>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="remarks-panel summary-panel employee-summary-panel" id="summary-box-section">
+          <div class="box-header">
+            <div>
+              <h2>COMPOSITE PERFORMANCE SCORE</h2>
+              <p>KRA 75% + Pulse 25% combined into one final score.</p>
+            </div>
+            <%= link_to "Export", export_dashboard_section_xlsx_path("summary", format: :xlsx, financial_year: @selected_financial_year), class: "section-export-btn" %>
+          </div>
+
+          <div class="employee-summary-layout">
+            <div class="table-wrap">
+              <table class="summary-table employee-summary-table">
+                <thead>
+                  <tr>
+                    <th>Section</th>
+                    <th>Section Weight</th>
+                    <th>Raw Score</th>
+                    <th>Weighted Contribution</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>A - KRA</td>
+                    <td>75%</td>
+                    <td><%= compact_number(@annual_percentage) %></td>
+                    <td><span class="summary-chip annual-summary-chip"><%= compact_number(@annual_percentage.to_f * 0.75) %></span></td>
+                  </tr>
+                  <tr>
+                    <td>B - Pulse Check</td>
+                    <td>25%</td>
+                    <td><%= compact_number(composite_pulse_percentage) %></td>
+                    <td><span class="summary-chip pulse-summary-chip"><%= compact_number(composite_pulse_percentage.to_f * 0.25) %></span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="employee-final-card">
+              <span class="final-card-label">Final Composite Score</span>
+              <strong><%= "#{compact_number(composite_display_total(annual_percentage: @annual_percentage, pulse_total_score: @dashboard_pulse_scores[:total_score]))}%" %></strong>
+              <div class="employee-final-band"><%= employee_composite&.dig(:band) || "Unsatisfactory" %></div>
+            </div>
+          </div>
+        </div>
+      <% else %>
+        <div class="empty-dashboard">
+          <h2>No annual data found</h2>
+          <p>Is user ke liye employee record ya quarterly percentage abhi available nahi hai.</p>
+        </div>
+      <% end %>
+    <% end %>
+
+    <% if @dashboard_mode == :admin %>
+    <div class="remarks-panel score-guide admin-guide-panel" id="action-guidance-section">
+      <div class="box-header">
+        <div>
+          <h2>PULSE SCORE RANGE</h2>
+          <p>Pulse score band, rating, and recommended action guide.</p>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr>
+              <th>Total / 25 Range</th>
+              <th>Band</th>
+              <th>Rating</th>
+              <th>Recommended Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% score_range_rows.each do |row| %>
+              <tr>
+                <td><%= row[:score_range] %></td>
+                <td><%= row[:band] %></td>
+                <td><%= render_rating_badge.call(score_rating_details(row[:rating_value])) %></td>
+                <td><%= row[:action] %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="pulse-score-card" id="pulse-score-section">
+      <div class="box-header">
+        <div>
+          <h2>SECTION B: PULSE-360 ASSESSMENT SCORE / Weightage : 25%</h2>
+          <p>All user pulse survey scores, total score, and category in one place.</p>
+        </div>
+        <%= link_to "Export", export_dashboard_section_xlsx_path("pulse", format: :xlsx, financial_year: @selected_financial_year), class: "section-export-btn pulse-export-btn" %>
+      </div>
+
+      <div class="table-wrap pulse-score-table-wrap">
+        <%
+          pulse_category_markup = lambda do |total_score|
+            total_score = total_score.to_f
+            if total_score > 23
+              '<span class="star-rating stars-5">★★★★★</span> <span class="category-label">Exceptional</span>'
+            elsif total_score >= 19
+              '<span class="star-rating stars-4">★★★★</span> <span class="category-label">Outstanding</span>'
+            elsif total_score >= 15
+              '<span class="star-rating stars-3">★★★</span> <span class="category-label">Meets Expectations</span>'
+            elsif total_score >= 11
+              '<span class="star-rating stars-2">★★</span> <span class="category-label">Needs Improvement</span>'
+            else
+              '<span class="star-rating stars-1">★</span> <span class="category-label">Unsatisfactory</span>'
+            end.html_safe
+          end
+        %>
+        <table class="pulse-table">
+          <thead>
+            <tr>
+              <th>Staff Name</th>
+              <th>Role</th>
+              <% pulse_group_rows_for(@dashboard_pulse_scores).each do |dimension| %>
+              <th><%= dimension[:label] %> (1-5)</th>
+              <% end %>
+              <th>Total /25</th>
+              <th>25% Computed</th>
+              <th>Pulse Remarks</th>
+              <th>Category & Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if @dashboard_mode == :admin %>
+              <% @employee_rows.each do |row| %>
+                <% grouped_scores = pulse_group_rows_for(row[:pulse_scores]) %>
+                <tr>
+                  <td><%= row[:employee_name] %></td>
+                  <td><%= row[:role] %></td>
+                  <% grouped_scores.each do |dimension| %>
+                    <td><%= dimension[:score].present? ? fmt_num.call(dimension[:score], 1) : "-" %></td>
+                  <% end %>
+                  <td class="pulse-total"><%= row[:pulse_scores][:total_score].present? ? fmt_num.call(row[:pulse_scores][:total_score], 1) : "-" %></td>
+                  <td class="pulse-total"><%= "#{row[:summary_scores][:pulse_score].to_f.round}%" %></td>
+                  <td><%= row[:pulse_remarks].presence || "-" %></td>
+                  <td><%= row[:pulse_available] ? pulse_category_markup.call(row[:pulse_scores][:total_score]) : "" %></td>
+                </tr>
+              <% end %>
+            <% else %>
+              <% grouped_scores = pulse_group_rows_for(@dashboard_pulse_scores) %>
+              <tr>
+                <td><%= @employee_detail&.employee_name.presence || current_user.email %></td>
+                <td><%= @user_details.first&.department&.department_type.presence || @employee_detail&.department.presence || "N/A" %></td>
+                <% grouped_scores.each do |dimension| %>
+                  <td><%= dimension[:score].present? ? fmt_num.call(dimension[:score], 1) : "-" %></td>
+                <% end %>
+                <td class="pulse-total"><%= @dashboard_pulse_scores[:total_score].present? ? fmt_num.call(@dashboard_pulse_scores[:total_score], 1) : "-" %></td>
+                <td class="pulse-total"><%= "#{@dashboard_summary_scores[:pulse_score].to_f.round}%" %></td>
+                <td><%= @dashboard_pulse_section_remarks.presence || "-" %></td>
+                <td><%= @dashboard_pulse_available ? pulse_category_markup.call(@dashboard_pulse_scores[:total_score]) : "" %></td>
+              </tr>
+            <% end %>
+          </tbody>
+          <% if @dashboard_mode == :admin && (team_average = pulse_team_average(@employee_rows)) %>
+            <tfoot style="background: rgba(18, 56, 77, 0.05); font-weight: bold; border-top: 2px solid #cbd5e1;">
+              <tr>
+                <td colspan="2">TEAM AVERAGE</td>
+                <% team_average[:grouped_scores].each do |dimension| %>
+                  <td><%= dimension[:score].present? ? fmt_num.call(dimension[:score], 1) : "-" %></td>
+                <% end %>
+                <td class="pulse-total"><%= fmt_num.call(team_average[:total_score], 1) %></td>
+                <td class="pulse-total"><%= "#{team_average[:pulse_score].to_f.round}%" %></td>
+                <td>-</td>
+                <td><%= team_average[:category][:stars] %> <%= team_average[:category][:category] %></td>
+              </tr>
+            </tfoot>
+          <% end %>
+        </table>
+      </div>
+    </div>
+
+    <div class="remarks-panel summary-panel" id="summary-box-section">
+      <div class="box-header">
+        <div>
+          <h2><i class="fas fa-chart-line"></i> COMPOSITE PERFORMANCE SCORE — KRA 75% + Pulse 25%</h2>
+          <p>User wise weighted total based on Annually / Weightage : 75% and PULSE-360 ASSESSMENT SCORE / Weightage : 25%.</p>
+        </div>
+        <%= link_to "Export", export_dashboard_section_xlsx_path("summary", format: :xlsx, financial_year: @selected_financial_year), class: "section-export-btn" %>
+      </div>
+
+      <div class="table-wrap summary-wrap">
+        <table class="summary-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>SECTION A -KRA %</th>
+              <th>SECTION B -Pulse %</th>
+              <th>Calculation</th>
+              <th>Final Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if @dashboard_mode == :admin %>
+              <% @employee_rows.each_with_index do |row, row_index| %>
+                <tr>
+                  <td><strong><%= row[:employee_name] %></strong></td>
+                  <td><span class="summary-chip neutral-summary-chip"><%= compact_number(row[:annual_percentage]) %></span></td>
+                  <td><span class="summary-chip neutral-summary-chip"><%= compact_number(row[:pulse_raw_percentage]) %></span></td>
+                  <td class="formula-cell">
+                    <button type="button" class="formula-toggle" aria-expanded="false" aria-controls="adminFormula<%= row_index %>" onclick="toggleFormula('adminFormula<%= row_index %>', this)">+</button>
+                    <div class="formula-details" id="adminFormula<%= row_index %>">
+                      <span class="formula-note"><%= pulse_formula_text(row.dig(:pulse_scores, :total_score)) %></span><br>
+                      <span class="formula-note"><strong><%= composite_formula_text(annual_percentage: row[:annual_percentage], pulse_total_score: row.dig(:pulse_scores, :total_score)) %></strong></span>
+                    </div>
+                  </td>
+                  <td><span class="summary-chip total-summary-chip"><%= "#{compact_number(composite_display_total(annual_percentage: row[:annual_percentage], pulse_total_score: row.dig(:pulse_scores, :total_score)))}%" %></span></td>
+                </tr>
+              <% end %>
+            <% elsif @employee_detail.present? %>
+              <tr>
+                <td><strong><%= @employee_detail&.employee_name.presence || current_user.email %></strong></td>
+                <td><span class="summary-chip neutral-summary-chip"><%= compact_number(@annual_percentage) %></span></td>
+                <td><span class="summary-chip neutral-summary-chip"><%= compact_number(composite_pulse_percentage) %></span></td>
+                <td class="formula-cell">
+                  <button type="button" class="formula-toggle" aria-expanded="false" aria-controls="employeeFormula" onclick="toggleFormula('employeeFormula', this)">+</button>
+                  <div class="formula-details" id="employeeFormula">
+                    <span class="formula-note"><%= pulse_formula_text(@dashboard_pulse_scores[:total_score]) %></span><br>
+                    <span class="formula-note"><strong><%= composite_formula_text(annual_percentage: @annual_percentage, pulse_total_score: @dashboard_pulse_scores[:total_score]) %></strong></span>
+                  </div>
+                </td>
+                <td><span class="summary-chip total-summary-chip"><%= "#{compact_number(composite_display_total(annual_percentage: @annual_percentage, pulse_total_score: @dashboard_pulse_scores[:total_score]))}%" %></span></td>
+              </tr>
+            <% end %>
+          </tbody>
+          <% if @dashboard_mode == :admin && @employee_rows.any? %>
+            <tfoot style="background: rgba(18, 56, 77, 0.05); font-weight: bold; border-top: 2px solid #cbd5e1;">
+              <tr>
+                <td>TEAM AVERAGE</td>
+                <td><span class="summary-chip neutral-summary-chip"><%= compact_number(@employee_rows.sum { |r| r[:annual_percentage].to_f } / @employee_rows.size) %></span></td>
+                <td><span class="summary-chip neutral-summary-chip"><%= compact_number(@employee_rows.sum { |r| r[:pulse_raw_percentage].to_f } / @employee_rows.size) %></span></td>
+                <td class="formula-cell">
+                  <button type="button" class="formula-toggle" aria-expanded="false" aria-controls="teamAverageFormula" onclick="toggleFormula('teamAverageFormula', this)">+</button>
+                  <div class="formula-details" id="teamAverageFormula">
+                    <span class="formula-note">Average of all employee composite calculations</span>
+                  </div>
+                </td>
+                <td><span class="summary-chip total-summary-chip"><%= "#{compact_number(@employee_rows.sum { |r| composite_display_total(annual_percentage: r[:annual_percentage], pulse_total_score: r.dig(:pulse_scores, :total_score)).to_f } / @employee_rows.size)}%" %></span></td>
+              </tr>
+            </tfoot>
+          <% end %>
+        </table>
+      </div>
+    </div>
+    <% end %>
+  </div>
+</div>
+
+<style>
+  .annual-dashboard {
+    margin-left: 240px;
+    padding: 2rem 2rem 2rem 1.5rem;
+    background:
+      radial-gradient(circle at top left, rgba(34, 211, 238, 0.08), transparent 18%),
+      linear-gradient(180deg, #f7fafc 0%, #f8fbfd 52%, #eef4f8 100%);
+  }
+
+  .dashboard-shell {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+  }
+
+  .hero-strip {
+    display: grid;
+    grid-template-columns: minmax(0, 1.9fr) minmax(320px, 0.95fr);
+    gap: 1.25rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .welcome-panel,
+  .time-panel {
+    border: 1px solid rgba(255, 255, 255, 0.95);
+    border-radius: 22px;
+    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08);
+  }
+
+  .welcome-panel {
+    padding: 1.6rem 1.75rem;
+    background:
+      radial-gradient(circle at top right, rgba(34, 211, 238, 0.12), transparent 24%),
+      linear-gradient(135deg, #ffffff 0%, #fbfdff 64%, #f2f8fb 100%);
+  }
+
+  .hero-kicker,
+  .time-label {
+    display: inline-flex;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #335a73;
+  }
+
+  .welcome-panel h2,
+  .time-panel h3 {
+    margin: 0;
+    color: #12384d;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+  }
+
+  .welcome-panel h2 {
+    font-size: 2.05rem;
+    line-height: 1.12;
+    max-width: 760px;
+  }
+
+  .welcome-panel p,
+  .time-panel p {
+    margin: 0.8rem 0 0;
+    color: #334155;
+    line-height: 1.65;
+  }
+
+  .hero-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 1.2rem;
+  }
+
+  .hero-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.62rem 0.95rem;
+    border-radius: 999px;
+    border: 1px solid #cfe3f0;
+    background: #ffffff;
+    color: #13475a;
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .financial-year-filter {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 1rem;
+  }
+
+  .financial-year-filter label {
+    color: #13475a;
+    font-size: 0.86rem;
+    font-weight: 700;
+  }
+
+  .financial-year-filter select {
+    min-width: 150px;
+    border: 1px solid #cfe3f0;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #123044;
+    font-weight: 600;
+    padding: 0.58rem 0.8rem;
+  }
+
+  .export-tag {
+    background: linear-gradient(135deg, #13475a 0%, #1f6c82 100%);
+    border-color: #13475a;
+    color: #ffffff;
+    box-shadow: 0 10px 20px rgba(19, 71, 90, 0.14);
+  }
+
+  .hero-menu-tag {
+    cursor: pointer;
+    scroll-behavior: smooth;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  .time-panel {
+    padding: 1.2rem 1.25rem;
+    background:
+      radial-gradient(circle at bottom center, rgba(34, 211, 238, 0.14), transparent 34%),
+      radial-gradient(circle at center, rgba(34, 211, 238, 0.05), transparent 55%),
+      linear-gradient(135deg, #102231 0%, #122837 52%, #163746 100%);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .time-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(rgba(56, 189, 248, 0.28) 0.8px, transparent 0.8px);
+    background-size: 8px 8px;
+    opacity: 0.25;
+    pointer-events: none;
+  }
+
+  .clock-shell {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(170px, 1fr);
+    align-items: center;
+    gap: 0.8rem;
+  }
+
+  .clock-meta span,
+  .clock-meta p {
+    display: block;
+    color: #f8fbfc;
+  }
+
+  .clock-meta span {
+    font-size: 1.18rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    opacity: 1;
+  }
+
+  .clock-meta p {
+    margin: 0.45rem 0 0;
+    font-size: 1.06rem;
+    font-weight: 700;
+    line-height: 1.5;
+    opacity: 0.98;
+  }
+
+  .clock-note {
+    display: block;
+    margin-top: 0.45rem;
+    color: rgba(248, 251, 252, 0.7);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .clock-ring {
+    position: relative;
+    width: 170px;
+    height: 170px;
+    margin-left: auto;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at center, rgba(5, 9, 15, 0.98) 57%, transparent 58%),
+      conic-gradient(from 210deg, rgba(34, 211, 238, 0.06) 0deg, #29d6ef 105deg, rgba(34, 211, 238, 0.12) 205deg, rgba(255, 255, 255, 0.04) 310deg, rgba(34, 211, 238, 0.06) 360deg);
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.06),
+      0 0 0 8px rgba(255, 255, 255, 0.02);
+    display: grid;
+    place-items: center;
+    isolation: isolate;
+  }
+
+  .clock-ring::before {
+    content: "";
+    position: absolute;
+    inset: 14px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+  }
+
+  .clock-orbit {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at center, transparent 56%, rgba(34, 211, 238, 0.1) 57%, transparent 58%),
+      conic-gradient(from 210deg, rgba(34, 211, 238, 0.08) 0deg, #22d3ee 110deg, rgba(34, 211, 238, 0.18) 205deg, rgba(255, 255, 255, 0.05) 315deg, rgba(34, 211, 238, 0.08) 360deg);
+    animation: clock-spin 14s linear infinite;
+    z-index: 0;
+  }
+
+  .clock-ring-inner {
+    position: relative;
+    width: 126px;
+    height: 126px;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at top, rgba(13, 24, 33, 0.96), rgba(5, 10, 14, 0.98));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: grid;
+    place-items: center;
+    box-shadow:
+      inset 0 0 28px rgba(34, 211, 238, 0.05),
+      inset 0 -8px 18px rgba(0, 0, 0, 0.32);
+    z-index: 2;
+    transform: none !important;
+  }
+
+  .clock-time-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+  }
+
+  .clock-time-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.32rem;
+  }
+
+  .clock-time {
+    color: #ffffff;
+    font-size: 1.9rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    transform: rotate(0deg);
+    position: relative;
+    z-index: 3;
+    text-shadow: 0 3px 12px rgba(0, 0, 0, 0.35);
+  }
+
+  .clock-meridiem {
+    margin-top: 0.2rem;
+    color: rgba(186, 230, 253, 0.88);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .clock-seconds {
+    color: rgba(191, 219, 254, 0.78);
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.28em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ring-dot {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+    z-index: 3;
+  }
+
+  .ring-dot-one {
+    top: 34px;
+    right: 20px;
+  }
+
+  .ring-dot-two {
+    bottom: 36px;
+    left: 18px;
+  }
+
+  @keyframes clock-spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .annual-box,
+  .remarks-panel,
+  .pulse-score-card,
+  .score-guide,
+  .empty-dashboard,
+  .stat-card {
+    background: rgba(255, 255, 255, 0.98);
+    border: 1px solid rgba(255, 255, 255, 0.98);
+    border-radius: 22px;
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
+  }
+
+  .box-header h2,
+  .empty-dashboard h2 {
+    margin: 0;
+    color: #13475a;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    font-size: 2rem;
+    line-height: 1.08;
+  }
+
+  .box-header p,
+  .empty-dashboard p,
+  .empty-state {
+    display: block;
+    color: #334155;
+    font-size: 1rem;
+    margin-top: 0.45rem;
+  }
+
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.15rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .employee-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .stat-card {
+    padding: 1.35rem 1.5rem;
+  }
+
+  .stat-card strong {
+    font-size: 2rem;
+    color: #0f172a;
+  }
+
+  .stat-card span {
+    display: block;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #475569;
+    margin-bottom: 0.45rem;
+  }
+
+  .stat-subtext {
+    display: block;
+    margin-top: 0.65rem;
+    color: #475569;
+    font-size: 0.88rem;
+    line-height: 1.4;
+  }
+
+  .total-card {
+    background: linear-gradient(135deg, #fff7e2 0%, #ffefc2 100%);
+  }
+
+  .percentage-card {
+    background: linear-gradient(135deg, #ecfdf5 0%, #d6fae8 100%);
+  }
+
+  .final-card {
+    background: linear-gradient(135deg, #ecf5ff 0%, #d7e9ff 100%);
+  }
+
+  .employee-summary-grid .stat-card strong {
+    font-size: 1.35rem;
+    line-height: 1.25;
+  }
+
+  .employee-summary-grid .final-card strong {
+    font-size: 1.85rem;
+  }
+
+  .annual-box,
+  .remarks-panel,
+  .pulse-score-card,
+  .score-guide,
+  .empty-dashboard {
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    width: 100%;
+  }
+
+  .box-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.15rem;
+    padding-bottom: 0.9rem;
+    border-bottom: 1px solid #e6edf5;
+  }
+
+  .employee-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.2rem;
+  }
+
+  .employee-meta-card {
+    padding: 1rem 1.05rem;
+    border-radius: 18px;
+    background: linear-gradient(180deg, #f9fbfd 0%, #f1f7fb 100%);
+    border: 1px solid #dce8f2;
+  }
+
+  .employee-meta-card span {
+    display: block;
+    color: #64748b;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 0.45rem;
+  }
+
+  .employee-meta-card strong {
+    color: #12384d;
+    font-size: 1.05rem;
+    line-height: 1.4;
+  }
+
+  .employee-sections-grid,
+  .employee-summary-layout {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.5rem;
+    align-items: start;
+  }
+
+  .employee-pulse-card {
+    padding: 1.5rem;
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .employee-manager-panel {
+    background: linear-gradient(180deg, #ffffff 0%, #f4faff 100%);
+    border-color: #dce8f2;
+  }
+
+  .employee-pulse-card .box-header,
+  .employee-manager-panel .box-header {
+    margin-bottom: 1rem;
+  }
+
+  .employee-manager-panel .compact-metric-table th {
+    background: #eff6fb;
+    color: #13475a;
+    border-bottom-color: #d6e7f3;
+  }
+
+  .compact-metric-table tfoot td,
+  .employee-kra-table tfoot td {
+    background: #f6fbff;
+    border-top: 1px solid #dce8f2;
+    color: #12384d;
+  }
+
+  .compact-metric-table {
+    width: 100%;
+    min-width: 0;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+
+  .compact-metric-table th {
+    background: #eff6fb;
+    color: #13475a;
+    padding: 0.9rem 1rem;
+    font-size: 0.77rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    border-bottom: 1px solid #d6e7f3;
+    text-align: left;
+  }
+
+  .compact-metric-table td {
+    padding: 1rem;
+    border-top: 1px solid #edf2f7;
+    background: #ffffff;
+    color: #0f172a;
+    line-height: 1.55;
+    vertical-align: top;
+  }
+
+  .compact-metric-table tbody tr:nth-child(even) td {
+    background: #f9fcfe;
+  }
+
+  .compact-metric-table th:first-child,
+  .compact-metric-table td:first-child {
+    width: 52%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .manager-feedback-table th:first-child,
+  .manager-feedback-table td:first-child {
+    width: 48%;
+  }
+
+  .compact-metric-table th:nth-child(2),
+  .compact-metric-table th:nth-child(3),
+  .compact-metric-table th:nth-child(4),
+  .compact-metric-table th:nth-child(5),
+  .compact-metric-table td:nth-child(2),
+  .compact-metric-table td:nth-child(3),
+  .compact-metric-table td:nth-child(4),
+  .compact-metric-table td:nth-child(5) {
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .metric-summary-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 1rem;
+  }
+
+  .employee-remark-box {
+    margin-top: 1rem;
+  }
+
+  .employee-manager-panel .single-remark-box {
+    background: linear-gradient(180deg, #ffffff 0%, #f7fbfe 100%);
+    border-color: #dce8f2;
+  }
+
+  .employee-manager-panel .dashboard-remark-heading {
+    color: #13475a;
+  }
+
+  .employee-summary-panel .table-wrap {
+    max-height: none;
+  }
+
+  .employee-final-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 1.6rem;
+    border-radius: 22px;
+    background: linear-gradient(180deg, #fff5cf 0%, #ffe89d 100%);
+    border: 1px solid #f2d07a;
+    text-align: center;
+    box-shadow: 0 16px 24px rgba(138, 90, 16, 0.12);
+  }
+
+  .final-card-label {
+    display: block;
+    color: #8a5a10;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .employee-final-card strong {
+    margin-top: 0.6rem;
+    color: #13475a;
+    font-size: 3rem;
+    line-height: 1;
+  }
+
+  .employee-final-band {
+    margin-top: 1rem;
+    padding: 0.45rem 0.85rem;
+    border-radius: 999px;
+    background: rgba(19, 71, 90, 0.1);
+    color: #12384d;
+    font-weight: 800;
+  }
+
+  .employee-final-rating {
+    margin-top: 0.75rem;
+    color: #334155;
+    font-weight: 700;
+  }
+
+  .employee-final-card p {
+    margin: 0.9rem 0 0;
+    color: #334155;
+    line-height: 1.55;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    width: 100%;
+    border: 1px solid #dfeaf2;
+    border-radius: 18px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbfe 100%);
+  }
+
+  .annual-box .table-wrap,
+  .pulse-score-card .table-wrap {
+    max-height: 430px;
+    overflow-y: auto;
+  }
+
+  .employee-pulse-card .table-wrap,
+  .employee-manager-panel .table-wrap,
+  .employee-summary-panel .table-wrap,
+  .admin-guide-panel .table-wrap {
+    max-height: none;
+  }
+
+  .annual-table {
+    width: 100%;
+    border-collapse: collapse;
+    overflow: hidden;
+    border-radius: 18px;
+  }
+
+  .annual-table th {
+    background: #eff6fb;
+    color: #13475a;
+    padding: 1rem;
+    font-size: 0.77rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    border-bottom: 1px solid #d6e7f3;
+  }
+
+  .annual-table td {
+    padding: 1.1rem 1rem;
+    text-align: center;
+    border-top: 1px solid #edf2f7;
+    background: #ffffff;
+  }
+
+  .annual-table tbody tr:nth-child(even) td {
+    background: #f9fcfe;
+  }
+
+  .score-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 90px;
+    padding: 0.7rem 1rem;
+    border-radius: 999px;
+    background: #eef6fb;
+    color: #12384d;
+    font-weight: 700;
+    box-shadow: inset 0 0 0 1px #cfe1ee;
+  }
+
+  .total-chip {
+    background: #fff3d6;
+    color: #8a5a10;
+    box-shadow: inset 0 0 0 1px #f3d89a;
+  }
+
+  .percentage-chip {
+    background: #e4f8ec;
+    color: #166534;
+    box-shadow: inset 0 0 0 1px #bde6cd;
+  }
+
+  .admin-table td:first-child,
+  .admin-table td:nth-child(2),
+  .admin-table td:nth-child(3),
+  .admin-table td:last-child {
+    text-align: left;
+  }
+
+  .remarks-cell {
+    min-width: 320px;
+    color: #0f172a;
+    line-height: 1.5;
+    white-space: normal;
+    vertical-align: top;
+  }
+
+  .remarks-block {
+    display: grid;
+    gap: 0;
+    white-space: normal;
+  }
+
+  .remark-line {
+    padding: 0.45rem 0;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .remark-line.with-divider {
+    border-bottom: 1px solid #d6e7f3;
+  }
+
+  .dashboard-remark-section + .dashboard-remark-section {
+    margin-top: 1rem;
+  }
+
+  .dashboard-remark-heading {
+    margin-bottom: 0.55rem;
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #28536b;
+  }
+
+  .remarks-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+  }
+
+  .single-remark-box {
+    padding: 1rem 1.05rem;
+    border-radius: 20px;
+    border: 1px solid #e4edf4;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbfe 100%);
+    min-height: 92px;
+    color: #0f172a;
+    line-height: 1.65;
+  }
+
+  .pulse-remark-inline {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 220px;
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .pulse-remark-text p {
+    margin: 0;
+  }
+
+  .pulse-remark-score-box {
+    padding: 0.9rem 1rem;
+    border-radius: 18px;
+    background: linear-gradient(180deg, #fff8e8 0%, #fff3d8 100%);
+    box-shadow: inset 0 0 0 1px #f0cf89;
+    text-align: center;
+  }
+
+  .pulse-remark-score-box span {
+    display: block;
+    color: #8a5a10;
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 0.4rem;
+  }
+
+  .pulse-remark-score-box strong {
+    display: block;
+    color: #8a5a10;
+    font-size: 1.35rem;
+    font-weight: 800;
+    min-height: 1.6rem;
+  }
+
+  .remark-score-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 0.65rem;
+    margin-bottom: 0.45rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    background: #fff2d8;
+    color: #8a5a10;
+    font-size: 0.84rem;
+    font-weight: 800;
+    box-shadow: inset 0 0 0 1px #f0cf89;
+  }
+
+  .user-remark-score {
+    margin-right: 0;
+  }
+
+  .remark-card {
+    background: linear-gradient(180deg, #ffffff 0%, #f7fbfe 100%);
+    border: 1px solid rgba(255, 255, 255, 0.96);
+    border-radius: 20px;
+    padding: 1rem 1.05rem;
+  }
+
+  .remark-title {
+    font-size: 1rem;
+    font-weight: 800;
+    color: #13475a;
+    margin-bottom: 0.75rem;
+  }
+
+  .remark-list {
+    margin: 0;
+    padding-left: 1rem;
+    color: #0f172a;
+  }
+
+  .remark-list li + li {
+    margin-top: 0.5rem;
+  }
+
+  .pulse-remarks-wrap {
+    max-height: 420px;
+    overflow-y: auto;
+  }
+
+  .pulse-remarks-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 1900px;
+  }
+
+  .pulse-remarks-table th {
+    background: #eff6fb;
+    color: #13475a;
+    padding: 0.9rem 1rem;
+    font-size: 0.77rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    border-bottom: 1px solid #d6e7f3;
+    text-align: left;
+  }
+
+  .pulse-remarks-table td {
+    padding: 1rem;
+    border-top: 1px solid #edf2f7;
+    background: #ffffff;
+    color: #0f172a;
+    line-height: 1.6;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .pulse-remarks-table tbody tr:nth-child(even) td {
+    background: #f9fcfe;
+  }
+
+  .pulse-remarks-table th:nth-child(n + 3):nth-child(-n + 9) {
+    min-width: 220px;
+  }
+
+  .pulse-remarks-table th:nth-child(10),
+  .pulse-remarks-table th:nth-child(11) {
+    min-width: 120px;
+  }
+
+  .pulse-remarks-table th:first-child,
+  .pulse-remarks-table td:first-child {
+    min-width: 220px;
+  }
+
+  .pulse-remarks-table th:nth-child(2),
+  .pulse-remarks-table td:nth-child(2) {
+    min-width: 120px;
+  }
+
+  .pulse-remarks-table th:last-child,
+  .pulse-remarks-table td:last-child {
+    min-width: 240px;
+  }
+
+  .manager-total-row td {
+    background: #f5f9fc !important;
+    font-weight: 800;
+  }
+
+  .pulse-remark-score-cell {
+    width: 150px;
+    text-align: center;
+  }
+
+  .summary-wrap {
+    max-height: 320px;
+    overflow-y: auto;
+  }
+
+  .summary-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .summary-table th {
+    background: #eff6fb;
+    color: #13475a;
+    padding: 0.95rem 1rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    border-bottom: 1px solid #d6e7f3;
+    text-align: left;
+  }
+
+  .summary-table td {
+    padding: 1rem;
+    background: #ffffff;
+    border-top: 1px solid #edf2f7;
+    color: #0f172a;
+    text-align: left;
+  }
+
+  .summary-table tbody tr:nth-child(even) td {
+    background: #f9fcfe;
+  }
+
+  .formula-cell {
+    min-width: 360px;
+  }
+
+  .formula-toggle {
+    width: 28px;
+    height: 28px;
+    border: 1px solid #cfe1ee;
+    border-radius: 50%;
+    background: #eef6fb;
+    color: #13475a;
+    font-size: 1rem;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 6px 14px rgba(19, 71, 90, 0.12);
+  }
+
+  .formula-toggle:hover {
+    background: #dff0f8;
+  }
+
+  .formula-details {
+    display: none;
+    margin-top: 0.55rem;
+  }
+
+  .formula-details.is-open {
+    display: block;
+  }
+
+  .formula-note {
+    display: inline-block;
+    font-size: 0.82rem;
+    line-height: 1.55;
+    color: #475569;
+    word-break: break-word;
+  }
+
+  .formula-note strong {
+    color: #13475a;
+    font-weight: 800;
+  }
+
+  .summary-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 86px;
+    padding: 0.55rem 0.85rem;
+    border-radius: 999px;
+    font-size: 0.92rem;
+    font-weight: 800;
+  }
+
+  .annual-summary-chip {
+    background: #e8f2fb;
+    color: #13475a;
+    box-shadow: inset 0 0 0 1px #c8ddec;
+  }
+
+  .neutral-summary-chip {
+    background: #f4f8fb;
+    color: #334155;
+    box-shadow: inset 0 0 0 1px #d9e6ef;
+  }
+
+  .pulse-summary-chip {
+    background: #ecfdf5;
+    color: #166534;
+    box-shadow: inset 0 0 0 1px #bde6cd;
+  }
+
+  .remarks-summary-chip {
+    background: #fff3d6;
+    color: #8a5a10;
+    box-shadow: inset 0 0 0 1px #f0cf89;
+  }
+
+  .employee-manager-panel .remarks-summary-chip,
+  .employee-summary-table .remarks-summary-chip {
+    background: #e8f2fb;
+    color: #13475a;
+    box-shadow: inset 0 0 0 1px #c8ddec;
+  }
+
+  .total-summary-chip {
+    background: linear-gradient(135deg, #13475a 0%, #1f6c82 100%);
+    color: #ffffff;
+    box-shadow: 0 10px 18px rgba(19, 71, 90, 0.14);
+  }
+
+  .pulse-score-card {
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .pulse-score-card.employee-pulse-card {
+    padding: 1.5rem;
+  }
+
+  .pulse-score-card.employee-pulse-card .table-wrap {
+    max-height: none;
+  }
+
+  .pulse-score-table-wrap {
+    max-height: 430px;
+  }
+
+  .section-export-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.62rem 1rem;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #13475a 0%, #1f6c82 100%);
+    color: #ffffff;
+    text-decoration: none;
+    font-size: 0.86rem;
+    font-weight: 700;
+    white-space: nowrap;
+    box-shadow: 0 10px 18px rgba(19, 71, 90, 0.14);
+  }
+
+  .pulse-export-btn {
+    margin-bottom: 0.2rem;
+  }
+
+  .pulse-table {
+    width: 100%;
+    min-width: 1700px;
+    border-collapse: collapse;
+  }
+
+  .pulse-table th {
+    background: #eff6fb;
+    color: #13475a;
+    padding: 0.8rem 0.55rem;
+    font-size: 0.77rem;
+    font-weight: 700;
+    border: 1px solid #dce8f2;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    letter-spacing: 0.08em;
+  }
+
+  .pulse-table td {
+    background: #ffffff;
+    color: #0f172a;
+    padding: 0.85rem 0.55rem;
+    font-size: 0.92rem;
+    border: 1px solid #edf2f7;
+    vertical-align: top;
+  }
+
+  .pulse-table tbody tr:nth-child(even) td {
+    background: #f9fcfe;
+  }
+
+  .pulse-table td:nth-child(13) {
+    background: #eef7ff;
+    font-weight: 800;
+    text-align: center;
+    color: #12384d;
+  }
+
+  .pulse-table th:first-child,
+  .pulse-table td:first-child {
+    min-width: 220px;
+    text-align: left;
+  }
+
+  .pulse-table th:nth-child(2),
+  .pulse-table td:nth-child(2) {
+    min-width: 160px;
+    text-align: left;
+  }
+
+  .pulse-table th:last-child,
+  .pulse-table td:last-child {
+    min-width: 240px;
+  }
+
+  .pulse-total {
+    min-width: 80px;
+  }
+
+  .star-rating {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.22rem;
+    padding: 0.38rem 0.72rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    line-height: 1;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.38);
+  }
+
+  .star-rating strong {
+    color: inherit;
+  }
+
+  .star-cluster {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.08rem;
+    letter-spacing: 0;
+  }
+
+  .star-seq {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.05rem;
+  }
+
+  .star-icon {
+    display: inline-block;
+    line-height: 1;
+  }
+
+  .star-icon-1 {
+    color: #f59e0b;
+  }
+
+  .star-icon-2 {
+    color: #fb923c;
+  }
+
+  .star-icon-3 {
+    color: #3b82f6;
+  }
+
+  .star-icon-4 {
+    color: #8b5cf6;
+  }
+
+  .star-icon-5 {
+    color: #ef4444;
+  }
+
+  .stars-5 {
+    color: #f59e0b;
+    background: linear-gradient(180deg, rgba(254, 243, 199, 0.95) 0%, rgba(253, 230, 138, 0.95) 100%);
+    border-color: rgba(245, 158, 11, 0.34);
+  }
+
+  .stars-4 {
+    color: #fb923c;
+    background: linear-gradient(180deg, rgba(255, 237, 213, 0.95) 0%, rgba(254, 215, 170, 0.95) 100%);
+    border-color: rgba(251, 146, 60, 0.3);
+  }
+
+  .stars-3 {
+    color: #3b82f6;
+    background: linear-gradient(180deg, rgba(219, 234, 254, 0.98) 0%, rgba(191, 219, 254, 0.95) 100%);
+    border-color: rgba(59, 130, 246, 0.3);
+  }
+
+  .stars-2 {
+    color: #8b5cf6;
+    background: linear-gradient(180deg, rgba(237, 233, 254, 0.98) 0%, rgba(221, 214, 254, 0.95) 100%);
+    border-color: rgba(139, 92, 246, 0.3);
+  }
+
+  .stars-1 {
+    color: #ef4444;
+    background: linear-gradient(180deg, rgba(254, 226, 226, 0.98) 0%, rgba(254, 202, 202, 0.95) 100%);
+    border-color: rgba(239, 68, 68, 0.32);
+  }
+
+  .category-label {
+    color: #0f172a;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+
+  .score-guide {
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .guide-header {
+    background: linear-gradient(90deg, #f6fbff 0%, #eef8ff 100%);
+    color: #13475a;
+    font-size: 1.7rem;
+    font-weight: 800;
+    padding: 1.1rem 1.2rem;
+    border-bottom: 1px solid #dbeaf5;
+    letter-spacing: -0.02em;
+  }
+
+  .guide-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .guide-table th {
+    background: #eff6fb;
+    color: #13475a;
+    padding: 0.9rem 1rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    border: 1px solid #dce8f2;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .guide-table td {
+    padding: 0.95rem 1rem;
+    font-size: 0.95rem;
+    color: #0f172a;
+    border: 1px solid #edf2f7;
+    vertical-align: middle;
+  }
+
+  .guide-table tbody tr:nth-child(even) td {
+    background: #f9fcfe;
+  }
+
+  .guide-table tbody tr:nth-child(odd) td {
+    background: #ffffff;
+  }
+
+  .empty-dashboard {
+    text-align: center;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbfd 100%);
+  }
+
+  .annual-dashboard {
+    color: #0f172a;
+  }
+
+  .dashboard-shell {
+    animation: dashboard-enter 0.55s ease-out both;
+  }
+
+  .welcome-panel,
+  .time-panel,
+  .annual-box,
+  .remarks-panel,
+  .pulse-score-card,
+  .score-guide,
+  .empty-dashboard,
+  .stat-card {
+    position: relative;
+    overflow: hidden;
+    transition:
+      transform 0.24s ease,
+      box-shadow 0.24s ease,
+      border-color 0.24s ease;
+  }
+
+  .welcome-panel::after,
+  .annual-box::after,
+  .remarks-panel::after,
+  .pulse-score-card::after,
+  .score-guide::after,
+  .stat-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(16, 185, 129, 0.04) 44%, rgba(245, 158, 11, 0.07));
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.24s ease;
+  }
+
+  .welcome-panel:hover,
+  .annual-box:hover,
+  .remarks-panel:hover,
+  .pulse-score-card:hover,
+  .score-guide:hover,
+  .stat-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(186, 215, 232, 0.95);
+    box-shadow: 0 20px 42px rgba(15, 23, 42, 0.1);
+  }
+
+  .welcome-panel:hover::after,
+  .annual-box:hover::after,
+  .remarks-panel:hover::after,
+  .pulse-score-card:hover::after,
+  .score-guide:hover::after,
+  .stat-card:hover::after {
+    opacity: 1;
+  }
+
+  .box-header {
+    position: relative;
+  }
+
+  .box-header::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: -1px;
+    width: 84px;
+    height: 3px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #0f5f73, #10b981, #f59e0b);
+  }
+
+  .hero-tag,
+  .section-export-btn,
+  .formula-toggle,
+  .score-chip,
+  .summary-chip,
+  .star-rating {
+    transition:
+      transform 0.2s ease,
+      box-shadow 0.2s ease,
+      background-color 0.2s ease;
+  }
+
+  .hero-tag:hover,
+  .section-export-btn:hover,
+  .formula-toggle:hover,
+  .score-chip:hover,
+  .summary-chip:hover,
+  .star-rating:hover {
+    transform: translateY(-2px);
+  }
+
+  .section-export-btn:hover,
+  .export-tag:hover,
+  .total-summary-chip:hover {
+    box-shadow: 0 14px 28px rgba(19, 71, 90, 0.22);
+  }
+
+  .table-wrap {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  }
+
+  .annual-table tbody tr td,
+  .compact-metric-table tbody tr td,
+  .summary-table tbody tr td,
+  .pulse-table tbody tr td,
+  .pulse-remarks-table tbody tr td,
+  .guide-table tbody tr td {
+    transition:
+      background-color 0.18s ease,
+      color 0.18s ease,
+      box-shadow 0.18s ease;
+  }
+
+  .annual-table tbody tr:hover td,
+  .compact-metric-table tbody tr:hover td,
+  .summary-table tbody tr:hover td,
+  .pulse-table tbody tr:hover td,
+  .pulse-remarks-table tbody tr:hover td,
+  .guide-table tbody tr:hover td {
+    background: #f0f9ff;
+    color: #0f3142;
+    box-shadow: inset 0 1px 0 rgba(14, 165, 233, 0.08), inset 0 -1px 0 rgba(14, 165, 233, 0.08);
+  }
+
+  .formula-details.is-open {
+    animation: formula-reveal 0.2s ease-out both;
+  }
+
+  .clock-ring {
+    animation: clock-breathe 4.8s ease-in-out infinite;
+  }
+
+  .ring-dot-one {
+    animation: dot-pulse 1.8s ease-in-out infinite;
+  }
+
+  .ring-dot-two {
+    animation: dot-pulse 1.8s ease-in-out 0.45s infinite;
+  }
+
+  @keyframes dashboard-enter {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes formula-reveal {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes clock-breathe {
+    0%, 100% {
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.06),
+        0 0 0 8px rgba(255, 255, 255, 0.02);
+    }
+    50% {
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.12),
+        0 0 0 11px rgba(34, 211, 238, 0.05),
+        0 18px 34px rgba(0, 0, 0, 0.18);
+    }
+  }
+
+  @keyframes dot-pulse {
+    0%, 100% {
+      transform: scale(1);
+      opacity: 0.82;
+    }
+    50% {
+      transform: scale(1.35);
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dashboard-shell,
+    .clock-orbit,
+    .clock-ring,
+    .ring-dot,
+    .formula-details.is-open {
+      animation: none !important;
+    }
+
+    .welcome-panel,
+    .time-panel,
+    .annual-box,
+    .remarks-panel,
+    .pulse-score-card,
+    .score-guide,
+    .empty-dashboard,
+    .stat-card,
+    .hero-tag,
+    .section-export-btn,
+    .formula-toggle,
+    .score-chip,
+    .summary-chip,
+    .star-rating {
+      transition: none !important;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .annual-dashboard {
+      margin-left: 0;
+      padding: 1rem;
+    }
+
+    .hero-strip,
+    .summary-grid,
+    .remarks-grid,
+    .employee-summary-grid,
+    .employee-meta-grid,
+    .employee-sections-grid,
+    .employee-summary-layout {
+      grid-template-columns: 1fr;
+      display: grid;
+    }
+
+    .welcome-panel h2 {
+      font-size: 1.55rem;
+    }
+
+    .clock-shell {
+      grid-template-columns: 1fr;
+      justify-items: center;
+      text-align: center;
+    }
+
+    .clock-ring {
+      width: 168px;
+      height: 168px;
+      margin-left: 0;
+    }
+
+    .clock-ring-inner {
+      width: 124px;
+      height: 124px;
+    }
+
+    .clock-time {
+      font-size: 1.72rem;
+    }
+
+    .box-header h2,
+    .guide-header {
+      font-size: 1.35rem;
+    }
+
+    .pulse-remark-inline {
+      grid-template-columns: 1fr;
+    }
+
+    .box-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .employee-final-card strong {
+      font-size: 2.35rem;
+    }
+  }
+</style>
+
+<script>
+  function toggleFormula(targetId, button) {
+    const target = document.getElementById(targetId);
+    if (!target) return;
+
+    const isOpen = target.classList.toggle("is-open");
+    button.textContent = isOpen ? "-" : "+";
+    button.setAttribute("aria-expanded", isOpen.toString());
+  }
+
+  (function() {
+    const timeNode = document.getElementById("dashboardTime");
+    const secondsNode = document.getElementById("dashboardSeconds");
+    const dateNode = document.getElementById("dashboardDate");
+    const greetingNode = document.getElementById("dashboardGreeting");
+    const meridiemNode = document.getElementById("dashboardMeridiem");
+
+    if (!timeNode || !secondsNode || !dateNode || !greetingNode || !meridiemNode) return;
+
+    function updateDashboardClock() {
+      const now = new Date();
+      const hour = now.getHours();
+
+      let greeting = "Good Evening";
+      if (hour < 12) {
+        greeting = "Good Morning";
+      } else if (hour < 17) {
+        greeting = "Good Afternoon";
+      }
+
+      timeNode.textContent = now.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true
+      }).replace(/\s?(AM|PM)$/i, "");
+
+      meridiemNode.textContent = now.toLocaleTimeString([], {
+        hour: "2-digit",
+        hour12: true
+      }).replace(/^\d+\s?/g, "");
+
+      secondsNode.textContent = ":" + now.toLocaleTimeString([], {
+        second: "2-digit"
+      });
+
+      dateNode.textContent = now.toLocaleDateString([], {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric"
+      });
+
+      greetingNode.textContent = greeting;
+    }
+
+    updateDashboardClock();
+    setInterval(updateDashboardClock, 1000);
+  })();
+</script>

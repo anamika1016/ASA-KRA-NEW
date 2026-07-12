@@ -1,0 +1,34 @@
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  username: postgres
+  password: postgres
+  host: localhost
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+
+development:
+  <<: *default
+  database: asakra
+
+test:
+  <<: *default
+  database: asakra_test
+
+production:
+  primary:
+    adapter: postgresql
+    encoding: unicode
+    database: asakra_production
+    pool: 5
+    username: myuser
+    password: <%= ENV['MYAPP_DATABASE_PASSWORD'] %>
+    host: localhost
+
+  cable:
+    adapter: postgresql
+    encoding: unicode
+    database: asakra_production
+    pool: 5
+    username: myuser
+    password: <%= ENV['MYAPP_DATABASE_PASSWORD'] %>
+    host: localhost

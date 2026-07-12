@@ -1,0 +1,73 @@
+wb = xlsx_package.workbook
+
+# Add a title
+wb.add_worksheet(name: "Department Activity Data") do |sheet|
+  # Add header row
+  headers = [
+    "Financial year", "Mobile No.", "Employee name", "Employee email", "Employee code",
+    "Post", "Location", "Department",
+    "L1 Code", "L1 Employer Name",
+    "OBS Code 1", "OBS Code 2", "OBS Code 3", "OBS Code 4",
+    "Key result indicators", "Unit of measurement", "Annual target",
+    "APR", "MAY", "JUN", "JUL", "AUG", "SEP",
+    "OCT", "NOV", "DEC", "JAN", "FEB", "MAR"
+  ]
+
+  sheet.add_row headers, style: sheet.styles.add_style(
+    bg_color: "6c757d",
+    fg_color: "FFFFFF",
+    b: true,
+    alignment: { horizontal: :center, vertical: :center }
+  )
+
+  # Add data rows
+  @user_details.each do |user_detail|
+    # Get L1 and L2 employer details
+    employee_detail = user_detail.employee_detail
+
+    # Find L1 employer
+    l1_employer = nil
+    if employee_detail&.l1_code.present?
+      l1_employer = EmployeeDetail.find_by("employee_code LIKE ?", employee_detail.l1_code.strip + "%")
+    end
+
+
+
+    row_data = [
+      user_detail.financial_year || "-",
+      user_detail.employee_detail&.mobile_number || "-",
+      user_detail.employee_detail&.employee_name || "-",
+      user_detail.employee_detail&.employee_email || "-",
+      user_detail.employee_detail&.employee_code || "-",
+      user_detail.employee_detail&.post || "-",
+      user_detail.employee_detail&.location || "-",
+      user_detail.department&.department_type || "-",
+      l1_employer&.employee_code || employee_detail&.l1_code || "-",
+      l1_employer&.employee_name || employee_detail&.l1_employer_name || "-",
+      employee_detail&.obs_code1 || "-",
+      employee_detail&.obs_code2 || "-",
+      employee_detail&.obs_code3 || "-",
+      employee_detail&.obs_code4 || "-",
+      user_detail.activity&.activity_name || "-",
+      user_detail.activity&.unit || "-",
+      annual_target_display(user_detail.activity),
+      target_display_value(user_detail.april),
+      target_display_value(user_detail.may),
+      target_display_value(user_detail.june),
+      target_display_value(user_detail.july),
+      target_display_value(user_detail.august),
+      target_display_value(user_detail.september),
+      target_display_value(user_detail.october),
+      target_display_value(user_detail.november),
+      target_display_value(user_detail.december),
+      target_display_value(user_detail.january),
+      target_display_value(user_detail.february),
+      target_display_value(user_detail.march)
+    ]
+
+    sheet.add_row row_data
+  end
+
+  # Auto-fit columns
+  sheet.column_widths 16, 16, 22, 28, 16, 18, 18, 16, 14, 22, 14, 14, 34, 18, 16, 10, 10, 10, 10, 10, 12, 10, 10, 10, 10, 10, 10
+end

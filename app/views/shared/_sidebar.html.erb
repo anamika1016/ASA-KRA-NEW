@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Required Meta Tags Always Come First -->
+  <meta charset="utf-8">
+  <meta name="robots" content="max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <link rel="canonical" href="https://preline.co/">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="description" content="Comprehensive overview with charts, tables, and a streamlined dashboard layout for easy data visualization and analysis.">
+
+  <meta name="twitter:site" content="@preline">
+  <meta name="twitter:creator" content="@preline">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Tailwind CSS Admin Template | Preline UI, crafted with Tailwind CSS">
+  <meta name="twitter:description" content="Comprehensive overview with charts, tables, and a streamlined dashboard layout for easy data visualization and analysis.">
+  <meta name="twitter:image" content="https://preline.co/assets/img/og-image.png">
+
+  <meta property="og:url" content="https://preline.co/">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Preline">
+  <meta property="og:title" content="Tailwind CSS Admin Template | Preline UI, crafted with Tailwind CSS">
+  <meta property="og:description" content="Comprehensive overview with charts, tables, and a streamlined dashboard layout for easy data visualization and analysis.">
+  <meta property="og:image" content="https://preline.co/assets/img/og-image.png">
+
+  <!-- Title -->
+  <title>Tailwind CSS Admin Template | Preline UI, crafted with Tailwind CSS</title>
+
+  <!-- Favicon -->
+  <link rel="shortcut icon" href="../../favicon.ico">
+
+  <!-- Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- CSS HS -->
+  <link rel="stylesheet" href="https://preline.co/assets/css/main.css?v=3.1.0">
+  
+  <!-- Sidebar layout guard -->
+  <style>
+    /* Force proper sidebar layout immediately */
+    #hs-application-sidebar {
+      min-width: 16rem !important;
+      width: 16rem !important;
+    }
+    
+    /* Force proper link layout */
+    #hs-application-sidebar nav a.flex.items-center {
+      display: flex !important;
+      align-items: center !important;
+      gap: 0.75rem !important;
+      padding: 0.5rem 0.625rem !important;
+      border-radius: 0.5rem !important;
+    }
+    
+    /* Force icon size */
+    #hs-application-sidebar nav a svg.sidebar-nav-icon {
+      width: 1.5rem !important;
+      height: 1.5rem !important;
+      flex-shrink: 0 !important;
+    }
+    
+    /* Force text to show inline */
+    #hs-application-sidebar nav a > span.font-semibold {
+      display: inline-flex !important;
+      align-items: center !important;
+      white-space: nowrap !important;
+      gap: 0.35rem !important;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    
+    /* Force navigation to be visible */
+    #hs-application-sidebar nav {
+      display: flex !important;
+      flex-direction: column !important;
+      padding: 0.75rem !important;
+    }
+    
+    #hs-application-sidebar nav ul {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 0.375rem !important;
+    }
+    
+    #hs-application-sidebar nav li {
+      display: block !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+
+    #hs-application-sidebar nav li.hs-accordion {
+      overflow: visible !important;
+    }
+
+    .sidebar-pending-dot {
+      display: inline-block;
+      width: 0.55rem;
+      height: 0.55rem;
+      border-radius: 9999px;
+      background-color: #ef4444;
+      box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+
+<body class="bg-gray-50">
+  <button
+    type="button"
+    class="app-sidebar-toggle"
+    data-action="click->sidebar#toggle"
+    data-sidebar-target="toggleButton"
+    aria-label="Hide menu"
+    aria-expanded="true">
+    <svg class="app-sidebar-toggle__icon" data-sidebar-target="collapseIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M3 6h18"></path>
+      <path d="M3 12h12"></path>
+      <path d="M3 18h18"></path>
+      <path d="M14 9l-3 3 3 3"></path>
+    </svg>
+    <svg class="app-sidebar-toggle__icon" data-sidebar-target="expandIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+      <path d="M3 6h18"></path>
+      <path d="M3 12h12"></path>
+      <path d="M3 18h18"></path>
+      <path d="M10 9l3 3-3 3"></path>
+    </svg>
+  </button>
+
+  <!-- Sidebar -->
+  <div id="hs-application-sidebar" class="hs-overlay  [--auto-close:lg]
+    hs-overlay-open:translate-x-0
+    -translate-x-full transition-all duration-300 transform
+    w-64 h-full
+    hidden
+    fixed inset-y-0 start-0 z-60
+    bg-white border-e border-gray-200
+    lg:block lg:translate-x-0 lg:end-auto lg:bottom-0" role="dialog" tabindex="-1" aria-label="Sidebar" data-sidebar-target="sidebar">
+    <div class="relative flex flex-col h-full max-h-full">
+      <div class="sidebar-brand px-6 pt-4 flex items-center justify-center">
+        <!-- Logo -->
+        <a class="sidebar-brand__link d-inline-block rounded-xl text-xl font-weight-semibold" href="#" aria-label="ASA">
+          <%= image_tag "PAPL logo-dark-green.png", alt: "ASA Logo", class: "sidebar-brand__logo img-fluid", style: "width: 200px; height: 65px" %>
+        </a>
+        <!-- End Logo -->
+      </div>
+
+      <!-- Content -->    
+    <div class="h-full overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-300">
+      <nav class="hs-accordion-group p-3 w-full flex flex-col flex-wrap" data-hs-accordion-always-open>
+        <ul class="flex flex-col sidebar-nav-list">
+
+          <!-- Employee Forms - Show for all employee types -->
+          <% if current_user.employee? || current_user.l1_employer? || current_user.l2_employer? %>
+          <li class="hs-accordion" id="users-accordion">
+            <%= link_to user_details_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(user_details_path)} text-base text-gray-800 rounded-lg" do %>
+              <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="7.5" />
+                <circle cx="12" cy="12" r="3.25" />
+                <path d="M19.5 12h-2.5M7 12H4.5M12 19.5V17M12 7V4.5" />
+              </svg>
+              <span class="font-semibold">Target Form</span>
+            <% end %>
+          </li>
+
+          <li class="hs-accordion" id="users-accordion">
+            <%= link_to get_user_detail_user_details_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(new_target_submission_path)} text-base text-gray-800 rounded-lg" do %>
+              <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                <circle cx="12" cy="8" r="2.5" />
+                <path d="M8 14.5h8" />
+                <path d="M8.5 18h7" />
+                <path d="M7 4.5h8l3 3v10A2.5 2.5 0 0 1 15.5 20h-8A2.5 2.5 0 0 1 5 17.5v-10A3 3 0 0 1 7 4.5Z" />
+              </svg>
+              <span class="font-semibold">Achievement Form</span>
+            <% end %>
+          </li>
+
+          <li class="hs-accordion" id="users-accordion">
+            <%= link_to submitted_achievements_user_details_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(submitted_achievements_user_details_path)} text-base text-gray-800 rounded-lg" do %>
+              <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                <path d="M7.5 12.5 10.5 15.5 16.5 9.5" />
+                <path d="M20 12v5a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17V7A2.5 2.5 0 0 1 6.5 4.5H15" />
+                <path d="M15 4.5h4.5V9" />
+              </svg>
+              <span class="font-semibold">Submitted Targets</span>
+            <% end %>
+          </li>
+          <% end %>
+
+          <!-- HOD Only - Admin Functions -->
+          <% if current_user.hod? %>
+            <li class="hs-accordion" id="users-accordion">
+              <%= link_to employee_details_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(employee_details_path)} text-base text-gray-800 rounded-lg" do %>
+                <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                  <rect x="3.5" y="5" width="17" height="14" rx="2.5" />
+                  <circle cx="9" cy="10" r="2.25" />
+                  <path d="M6.5 16c.8-1.7 2.1-2.5 3.9-2.5s3.1.8 3.9 2.5" />
+                  <path d="M16.5 9h1.5M16.5 12h1.5M16.5 15h1.5" />
+                </svg>
+                <span class="font-semibold">Employee Details</span>
+              <% end %>
+            </li>
+
+            <li class="hs-accordion" id="users-accordion">
+              <%= link_to departments_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(departments_path)} text-base text-gray-800 rounded-lg" do %>
+                <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                  <path d="M4 17.5V8.5L12 4l8 4.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5Z" />
+                  <path d="M8 10.5h8M8 14h8" />
+                  <path d="M8 17.5h5" />
+                </svg>
+                <span class="font-semibold">Add Theme/Account</span>
+              <% end %>
+            </li>
+
+            <li class="hs-accordion" id="users-accordion">
+              <%= link_to new_user_detail_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(new_user_detail_path)} text-base text-gray-800 rounded-lg" do %>
+                <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                  <circle cx="10" cy="8" r="3" />
+                  <path d="M4.5 18c1.1-2.2 3-3.5 5.5-3.5s4.4 1.3 5.5 3.5" />
+                  <path d="M17.5 8.5h3M19 7v3" />
+                </svg>
+                <span class="font-semibold">User Details</span>
+              <% end %>
+            </li>
+          <% end %>
+
+          <% if current_user.hod? || current_user.admin? %>
+            <li class="hs-accordion" id="users-accordion">
+              <%= link_to month_masters_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(month_masters_path)} text-base text-gray-800 rounded-lg" do %>
+                <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                  <rect x="4" y="5" width="16" height="15" rx="2.5" />
+                  <path d="M8 3.5v3M16 3.5v3M4 9h16" />
+                  <path d="M8 13h2.5M13.5 13H16M8 16.5h2.5M13.5 16.5H16" />
+                </svg>
+                <span class="font-semibold">Month Master</span>
+              <% end %>
+            </li>
+          <% end %>
+
+          <% if has_observer_pli_responsibilities? %>
+            <% observer_levels_for_current_user.each do |observer_level| %>
+              <% observer_index_path = observer_pli_index_path(observer_level) %>
+              <li class="hs-accordion" id="users-accordion">
+                <%= link_to observer_index_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if observer_menu_active?(observer_level)} text-base text-gray-800 rounded-lg" do %>
+                  <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                    <path d="M4.5 12s2.8-5.5 7.5-5.5 7.5 5.5 7.5 5.5-2.8 5.5-7.5 5.5S4.5 12 4.5 12Z" />
+                    <circle cx="12" cy="12" r="2.5" />
+                    <path d="M18.5 5.5 20 4M20 8h-2" />
+                  </svg>
+                  <span class="font-semibold">
+                    <%= observer_menu_title_for(observer_level) %>
+                    <% if observer_pending_reviews?(observer_level) %>
+                      <span class="sidebar-pending-dot" title="Pending observer reviews" aria-label="Pending observer reviews"></span>
+                    <% end %>
+                  </span>
+                <% end %>
+              </li>
+            <% end %>
+          <% end %>
+
+          <% if has_l1_responsibilities? %>
+            <li class="hs-accordion" id="users-accordion">
+              <%= link_to l1_employee_details_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(l1_employee_details_path)} text-base text-gray-800 rounded-lg" do %>
+                <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                  <path d="M12 4.5 14.3 9l4.9.7-3.5 3.4.8 4.9-4.5-2.4-4.5 2.4.8-4.9-3.5-3.4 4.9-.7Z" />
+                  <path d="M12 9.8v4.4" />
+                  <circle cx="12" cy="16.8" r=".7" fill="currentColor" stroke="none" />
+                </svg>
+                <span class="font-semibold">
+                  L1 Employee Details
+                  <% if l1_pending_reviews? %>
+                    <span class="sidebar-pending-dot" title="Pending L1 reviews" aria-label="Pending L1 reviews"></span>
+                  <% end %>
+                </span>
+              <% end %>
+            </li>
+          <% end %>
+
+          <% if has_quarterly_pli_responsibilities? %>
+            <li class="hs-accordion" id="users-accordion">
+              <%= link_to quarterly_pli_employee_details_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(quarterly_pli_employee_details_path)} text-base text-gray-800 rounded-lg" do %>
+                <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                  <path d="M4.5 19.5h15" />
+                  <path d="M7 16V9.5" />
+                  <path d="M12 16V5" />
+                  <path d="M17 16v-8" />
+                  <path d="m6 11 3-3 3 2 4-5" />
+                </svg>
+                <span class="font-semibold">Qutry PLI %</span>
+              <% end %>
+            </li>
+          <% end %>
+
+           <li>
+            <%= link_to trainings_path,
+                class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(trainings_path)} text-base text-gray-800 rounded-lg" do %>
+
+              <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                <path d="M5.5 7.5 12 4l6.5 3.5L12 11Z" />
+                <path d="M5.5 7.5V15L12 20l6.5-5V7.5" />
+                <path d="M12 11v9" />
+              </svg>
+
+              <span class="font-semibold">Trainings</span>
+            <% end %>
+          </li>
+
+          <% if current_user.hod? %>
+          <li>
+            <%= link_to user_training_assignments_path,
+                class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(user_training_assignments_path)} text-base text-gray-800 rounded-lg" do %>
+
+              <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                <rect x="6" y="4.5" width="12" height="15" rx="2.5" />
+                <path d="M9 4.5h6v3H9z" />
+                <path d="M9 11h6M9 15h4" />
+                <path d="m16.5 13.5 1.5 1.5 2.5-2.5" />
+              </svg>
+
+              <span class="font-semibold">Assign Trainings</span>
+            <% end %>
+          </li>
+          <% end %>
+          <!-- User Profile/Settings - Show for all users -->
+          <li class="hs-accordion" id="users-accordion">
+            <%= link_to settings_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(settings_path)} text-base text-gray-800 rounded-lg" do %>
+              <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                <circle cx="12" cy="8" r="3" />
+                <path d="M5.5 19c1.2-2.6 3.5-4 6.5-4s5.3 1.4 6.5 4" />
+                <path d="M18.5 6.5h1.5M19.25 5.75v1.5" />
+              </svg>
+              <span class="font-semibold">User Profile</span>
+            <% end %>
+          </li>
+
+          <!-- Logout -->
+          
+        </ul>
+      </nav>
+    </div>
+    <!-- Logout Button ABOVE the line -->
+    <div class="p-4 sidebar-logout">
+      <%= button_to destroy_user_session_path,
+          method: :delete,
+          data: { confirm: "Are you sure you want to sign out?" },
+          class: "w-full flex items-center gap-x-4 py-3 px-5 text-lg text-white bg-red-500 rounded-xl hover:bg-red-600 transition duration-200 shadow-md",
+          form: { style: "display: inline;" } do %>
+        <svg class="shrink-0 w-7 h-7 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+          <path d="M10 6V4.8A1.8 1.8 0 0 1 11.8 3h6.4A1.8 1.8 0 0 1 20 4.8v14.4a1.8 1.8 0 0 1-1.8 1.8h-6.4A1.8 1.8 0 0 1 10 19.2V18" />
+          <path d="M4 12h10" />
+          <path d="m10 8 4 4-4 4" />
+        </svg>
+        <span class="font-bold">Sign Out</span>
+      <% end %>
+    </div>
+
+    <div class="flex-shrink-0 border-t border-gray-200 p-4 bg-gray-50 sidebar-userbox">
+      <div class="flex items-center space-x-2 text-gray-700 overflow-hidden"> <!-- changed space-x-3 to space-x-2 -->
+
+        <!-- User Profile Image -->
+        <% if current_user.profile_image.attached? %>
+          <%= image_tag current_user.profile_image,
+                        alt: "User Avatar",
+                        class: "h-14 w-14 rounded-lg object-cover shadow-sm border border-gray-300 sidebar-avatar" %>
+        <% else %>
+          <%= image_tag "business_female_male_users.svg",
+                        alt: "User Avatar",
+                        class: "h-14 w-14 rounded-lg object-cover shadow-sm border border-gray-300 sidebar-avatar" %>
+        <% end %>
+
+        <!-- Email inside fixed width -->
+        <div class="flex flex-col overflow-hidden">
+          <span class="font-semibold text-base text-gray-900 truncate max-w-[170px]"> <!-- increased font size and max-width -->
+            <%= current_user.email %>
+          </span>
+          <span class="text-sm text-gray-500">Logged in</span> <!-- increased font size a bit -->
+        </div>
+      </div>
+    </div>
+      <!-- End Content -->
+    </div>
+  </div>
+  <!-- End Sidebar -->
+
+  <!-- Sidebar is visible immediately; keep the loaded class only for compatibility. -->
+  <script>
+    document.body.classList.add('loaded');
+  </script>
+</body>
+</html>

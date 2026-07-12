@@ -1,0 +1,881 @@
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: transparent;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    min-height: 100vh;
+    padding: 20px 0;
+    overflow-x: hidden;
+}
+
+.auth-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+}
+
+.auth-card {
+    background: white;
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+    border: 1px solid #e5e7eb;
+    overflow: hidden;
+    width: 100%;
+    max-width: 1000px;
+    display: flex;
+    min-height: 600px;
+    animation: slideInUp 0.8s ease-out;
+}
+
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(50px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.auth-left-panel {
+    background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+    color: white;
+    padding: 3rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    position: relative;
+    flex: 1;
+    min-width: 400px;
+}
+
+.auth-left-panel::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="0.5"/></pattern></defs><rect width="100" height="100" fill="url(%23grid)"/></svg>');
+    opacity: 0.3;
+}
+
+.auth-right-panel {
+    background: white;
+    padding: 3rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    flex: 1;
+    position: relative;
+}
+
+.welcome-title {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    position: relative;
+    z-index: 1;
+    animation: fadeInLeft 1s ease-out 0.3s both;
+}
+
+.welcome-subtitle {
+    font-size: 1.1rem;
+    opacity: 0.9;
+    margin-bottom: 2rem;
+    position: relative;
+    z-index: 1;
+    animation: fadeInLeft 1s ease-out 0.5s both;
+}
+
+@keyframes fadeInLeft {
+    from {
+        opacity: 0;
+        transform: translateX(-30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.user-icon {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 2rem;
+    position: relative;
+    z-index: 1;
+    animation: bounceIn 1s ease-out 0.7s both;
+}
+
+@keyframes bounceIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.3);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.05);
+    }
+    70% {
+        transform: scale(0.9);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.signin-btn {
+    background: transparent;
+    border: 2px solid white;
+    color: white;
+    padding: 12px 30px;
+    border-radius: 25px;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    z-index: 1;
+    animation: fadeInUp 1s ease-out 0.9s both;
+}
+
+.signin-btn:hover {
+    background: white;
+    color: #2c3e50;
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.form-title {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #1f2937;
+    margin-bottom: 0.5rem;
+    text-align: center;
+    animation: fadeInDown 0.8s ease-out;
+}
+
+@keyframes fadeInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.form-subtitle {
+    color: #6b7280;
+    text-align: center;
+    margin-bottom: 2rem;
+    animation: fadeInDown 0.8s ease-out 0.2s both;
+}
+
+.social-icons {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin-bottom: 2rem;
+    animation: fadeInUp 0.8s ease-out 0.4s both;
+}
+
+.social-icon {
+    width: 50px;
+    height: 50px;
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: white;
+}
+
+.social-icon:hover {
+    border-color: #374151;
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.divider {
+    text-align: center;
+    margin: 2rem 0;
+    position: relative;
+    animation: fadeIn 0.8s ease-out 0.6s both;
+}
+
+.divider::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: #e5e7eb;
+}
+
+.divider span {
+    background: white;
+    padding: 0 20px;
+    color: #6b7280;
+    font-weight: 600;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+    animation: slideInRight 0.6s ease-out both;
+}
+
+.form-group:nth-child(1) { animation-delay: 0.7s; }
+.form-group:nth-child(2) { animation-delay: 0.8s; }
+.form-group:nth-child(3) { animation-delay: 0.9s; }
+.form-group:nth-child(4) { animation-delay: 1.0s; }
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.form-label {
+    color: #374151;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    display: block;
+    font-size: 0.9rem;
+}
+
+.form-control {
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 15px 20px;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    background-color: #f9fafb;
+    width: 100%;
+    position: relative;
+}
+
+.form-control:focus {
+    border-color: #374151;
+    box-shadow: 0 0 0 3px rgba(55, 65, 81, 0.1);
+    background-color: white;
+    outline: none;
+}
+
+.form-control::placeholder {
+    color: #9ca3af;
+}
+
+.form-check {
+    display: flex;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    animation: slideInRight 0.6s ease-out 1.1s both;
+}
+
+.form-check-input {
+    margin-right: 10px;
+    transform: scale(1.2);
+}
+
+.form-check-label {
+    color: #6b7280;
+    font-size: 0.9rem;
+}
+
+.btn-login {
+    background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+    border: none;
+    border-radius: 12px;
+    padding: 15px 30px;
+    font-weight: 600;
+    font-size: 1rem;
+    color: white;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+    animation: slideInUp 0.6s ease-out 1.2s both;
+}
+
+.btn-login::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s;
+}
+
+.btn-login:hover::before {
+    left: 100%;
+}
+
+.btn-login:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(55, 65, 81, 0.3);
+}
+
+.auth-links {
+    text-align: center;
+    margin-top: 2rem;
+    animation: fadeIn 0.8s ease-out 1.3s both;
+}
+
+.auth-links a {
+    color: #374151;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.3s ease;
+}
+
+.auth-links a:hover {
+    color: #1f2937;
+}
+
+.alert {
+    border: none;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+    padding: 15px 20px;
+    animation: slideInDown 0.5s ease-out;
+}
+
+@keyframes slideInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.alert-danger {
+    background-color: #fef2f2;
+    color: #dc2626;
+    border-left: 4px solid #dc2626;
+}
+
+.alert-success {
+    background-color: #f0fdf4;
+    color: #16a34a;
+    border-left: 4px solid #16a34a;
+}
+
+.floating-shapes {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.shape {
+    position: absolute;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    animation: float 6s ease-in-out infinite;
+}
+
+.shape:nth-child(1) {
+    width: 60px;
+    height: 60px;
+    top: 20%;
+    left: 10%;
+    animation-delay: 0s;
+}
+
+.shape:nth-child(2) {
+    width: 40px;
+    height: 40px;
+    top: 60%;
+    right: 15%;
+    animation-delay: 2s;
+}
+
+.shape:nth-child(3) {
+    width: 80px;
+    height: 80px;
+    bottom: 20%;
+    left: 20%;
+    animation-delay: 4s;
+}
+
+@keyframes float {
+    0%, 100% {
+        transform: translateY(0px) rotate(0deg);
+    }
+    50% {
+        transform: translateY(-20px) rotate(180deg);
+    }
+}
+
+/* Persistent Error Display */
+.persistent-error {
+    background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+    border: 2px solid #dc2626;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+    padding: 0;
+    animation: slideInDown 0.5s ease-out, pulseError 2s infinite;
+    box-shadow: 0 4px 20px rgba(220, 38, 38, 0.3);
+}
+
+.error-content {
+    display: flex;
+    align-items: center;
+    padding: 15px 20px;
+    position: relative;
+}
+
+.error-icon {
+    font-size: 1.5rem;
+    margin-right: 12px;
+    animation: bounce 1s infinite;
+}
+
+.error-text {
+    flex: 1;
+    color: #dc2626;
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.error-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: #dc2626;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+}
+
+.error-close:hover {
+    background-color: rgba(220, 38, 38, 0.1);
+    transform: scale(1.1);
+}
+
+.error-progress-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background-color: rgba(220, 38, 38, 0.2);
+    border-radius: 0 0 12px 12px;
+    overflow: hidden;
+}
+
+.error-progress-fill {
+    height: 100%;
+    background-color: #dc2626;
+    width: 100%;
+    animation: progressCountdown 4s linear forwards;
+}
+
+@keyframes progressCountdown {
+    from {
+        width: 100%;
+    }
+    to {
+        width: 0%;
+    }
+}
+
+@keyframes bounce {
+    0%, 20%, 50%, 80%, 100% {
+        transform: translateY(0);
+    }
+    40% {
+        transform: translateY(-5px);
+    }
+    60% {
+        transform: translateY(-3px);
+    }
+}
+
+@media (max-width: 768px) {
+    .auth-card {
+        flex-direction: column;
+        max-width: 400px;
+    }
+    
+    .auth-left-panel {
+        min-width: auto;
+        padding: 2rem;
+    }
+    
+    .auth-right-panel {
+        padding: 2rem;
+    }
+    
+    .welcome-title {
+        font-size: 2rem;
+    }
+}
+</style>
+
+<!-- Modern Dual Panel Sign In Form -->
+<div class="auth-container">
+<div class="auth-card">
+<!-- Left Panel - Welcome Section -->
+<div class="auth-left-panel">
+<div class="floating-shapes">
+<div class="shape"></div>
+<div class="shape"></div>
+<div class="shape"></div>
+</div>
+
+<svg class="user-icon" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+<circle cx="50" cy="35" r="15" fill="white" opacity="0.9"/>
+<path d="M25 75c0-13.8 11.2-25 25-25s25 11.2 25 25" stroke="white" stroke-width="4" stroke-linecap="round" opacity="0.9"/>
+<circle cx="50" cy="50" r="45" stroke="white" stroke-width="2" opacity="0.3"/>
+</svg>
+
+<h1 class="welcome-title">Welcome Back!</h1>
+<p class="welcome-subtitle">Sign in to access your account and continue your journey with us</p>
+
+<button class="signin-btn" onclick="openRegistrationWithConfirmation()">
+Switch to Register
+</button>
+</div>
+
+<!-- Right Panel - Login Form -->
+<div class="auth-right-panel">
+<h2 class="form-title">Sign In</h2>
+<p class="form-subtitle">Enter your credentials to access your account</p>
+
+<!-- Persistent Error Display Area -->
+<div id="persistent-error" class="persistent-error" style="display: none;">
+<div class="error-content">
+  <span class="error-icon">⚠️</span>
+  <span class="error-text"></span>
+  <button class="error-close" onclick="hidePersistentError()">×</button>
+</div>
+<div class="error-progress-bar">
+  <div class="error-progress-fill"></div>
+</div>
+</div>
+
+<!-- Hidden error message for JavaScript to detect -->
+<% if flash[:alert] %>
+<div id="hidden-error-message" style="display: none;"><%= flash[:alert] %></div>
+<% end %>
+
+<!-- Flash messages are handled globally in application layout -->
+
+<%= form_for(resource, as: resource_name, url: session_path(resource_name), html: { data: { turbo: false }, id: "signin-form" }) do |f| %>
+<div class="form-group">
+  <%= f.label :employee_code, "Employee Code", class: "form-label" %>
+  <%= f.text_field :employee_code, value: params[:employee_code], autofocus: true, autocomplete: "username", class: "form-control", placeholder: "Enter your employee code", required: true %>
+  <div class="field-error" id="employee-code-error" style="display: none; color: #dc2626; font-size: 0.875rem; margin-top: 0.25rem;"></div>
+</div>
+
+<div class="form-group">
+  <%= f.label :password, class: "form-label" %>
+  <%= f.password_field :password, autocomplete: "current-password", class: "form-control", placeholder: "Enter password", required: true %>
+  <div class="field-error" id="password-error" style="display: none; color: #dc2626; font-size: 0.875rem; margin-top: 0.25rem;"></div>
+</div>
+
+<% if devise_mapping.rememberable? %>
+  <div class="form-check">
+    <%= f.check_box :remember_me, class: "form-check-input" %>
+    <%= f.label :remember_me, class: "form-check-label" %>
+  </div>
+<% end %>
+
+<%= f.submit "Sign In", class: "btn-login" %>
+<% end %>
+
+<div class="auth-links">
+<%= render "devise/shared/links" %>
+</div>
+</div>
+</div>
+</div>
+
+<script>
+function openRegistrationWithConfirmation() {
+alert('Are you want to open register page?');
+
+if (confirm('Please confirm: do you want to open registration?')) {
+window.location.href = '<%= new_user_registration_path %>';
+}
+}
+
+// Global function to hide persistent error
+function hidePersistentError() {
+const persistentError = document.getElementById('persistent-error');
+if (persistentError) {
+// Add fade-out animation
+persistentError.style.transition = 'opacity 0.5s ease-out, transform 0.5s ease-out';
+persistentError.style.opacity = '0';
+persistentError.style.transform = 'translateY(-20px)';
+
+// Hide after animation completes
+setTimeout(() => {
+    persistentError.style.display = 'none';
+    // Reset styles for next time
+    persistentError.style.transition = '';
+    persistentError.style.opacity = '';
+    persistentError.style.transform = '';
+}, 500);
+}
+}
+
+// Global function to show persistent error
+function showPersistentError(message) {
+const persistentError = document.getElementById('persistent-error');
+const errorText = document.querySelector('.error-text');
+if (persistentError && errorText) {
+errorText.textContent = message;
+persistentError.style.display = 'block';
+
+// Play error sound (if user allows)
+try {
+    const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmGgU7k9n1unEiBS13yO/eizEIHWq+8+OWT');
+    audio.volume = 0.3;
+    audio.play().catch(() => {}); // Ignore if audio fails
+} catch (e) {
+    // Ignore audio errors
+}
+
+// Auto-hide after 4 seconds (shorter time for better UX)
+setTimeout(() => {
+    hidePersistentError();
+}, 4000);
+}
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+// Check for hidden error message and show in persistent error area
+const hiddenErrorMessage = document.getElementById('hidden-error-message');
+if (hiddenErrorMessage) {
+const errorText = hiddenErrorMessage.textContent.trim();
+showPersistentError(errorText);
+}
+
+// Form validation
+const form = document.getElementById('signin-form');
+const passwordField = document.querySelector('input[name="user[password]"]');
+const employeeCodeField = document.querySelector('input[name="user[employee_code]"]');
+
+// Real-time validation
+function showFieldError(fieldId, message) {
+const errorDiv = document.getElementById(fieldId);
+errorDiv.textContent = message;
+errorDiv.style.display = 'block';
+const field = document.querySelector(`input[name="user[${fieldId.replace('-error', '').replace('-', '_')}]"]`);
+if (field) {
+    field.style.borderColor = '#dc2626';
+}
+}
+
+function clearFieldError(fieldId) {
+const errorDiv = document.getElementById(fieldId);
+errorDiv.style.display = 'none';
+const field = document.querySelector(`input[name="user[${fieldId.replace('-error', '').replace('-', '_')}]"]`);
+if (field) {
+    field.style.borderColor = '#e5e7eb';
+}
+}
+
+// Password validation
+passwordField.addEventListener('blur', function() {
+const password = this.value;
+if (password === '') {
+    showFieldError('password-error', 'Password is required');
+} else if (password.length < 6) {
+    showFieldError('password-error', 'Password must be at least 6 characters');
+} else {
+    clearFieldError('password-error');
+}
+});
+
+// Employee code validation
+employeeCodeField.addEventListener('blur', function() {
+const code = this.value.trim();
+if (code === '') {
+    showFieldError('employee-code-error', 'Employee code is required');
+} else {
+    clearFieldError('employee-code-error');
+}
+});
+
+// Form submission validation
+form.addEventListener('submit', function(e) {
+let hasErrors = false;
+
+// Clear previous errors
+clearFieldError('password-error');
+clearFieldError('employee-code-error');
+
+// Validate password
+const password = passwordField.value;
+if (password === '') {
+    showFieldError('password-error', 'Password is required');
+    hasErrors = true;
+} else if (password.length < 6) {
+    showFieldError('password-error', 'Password must be at least 6 characters');
+    hasErrors = true;
+}
+
+// Validate employee code
+const employeeCode = employeeCodeField.value.trim();
+if (employeeCode === '') {
+    showFieldError('employee-code-error', 'Employee code is required');
+    hasErrors = true;
+}
+
+if (hasErrors) {
+    e.preventDefault();
+    return false;
+}
+});
+
+// Add interactive animations to form elements
+const formControls = document.querySelectorAll('.form-control');
+formControls.forEach(control => {
+control.addEventListener('focus', function() {
+    this.parentElement.style.transform = 'scale(1.02)';
+    this.parentElement.style.transition = 'transform 0.3s ease';
+});
+
+control.addEventListener('blur', function() {
+    this.parentElement.style.transform = 'scale(1)';
+});
+});
+
+// Add ripple effect to buttons
+const buttons = document.querySelectorAll('.btn-login, .signin-btn');
+buttons.forEach(button => {
+button.addEventListener('click', function(e) {
+    const ripple = document.createElement('span');
+    const rect = this.getBoundingClientRect();
+    const size = Math.max(rect.width, rect.height);
+    const x = e.clientX - rect.left - size / 2;
+    const y = e.clientY - rect.top - size / 2;
+    
+    ripple.style.width = ripple.style.height = size + 'px';
+    ripple.style.left = x + 'px';
+    ripple.style.top = y + 'px';
+    ripple.classList.add('ripple');
+    
+    this.appendChild(ripple);
+    
+    setTimeout(() => {
+        ripple.remove();
+    }, 600);
+});
+});
+
+// Add floating animation to shapes
+const shapes = document.querySelectorAll('.shape');
+shapes.forEach((shape, index) => {
+shape.style.animationDelay = (index * 2) + 's';
+});
+
+// Add typing animation to welcome text
+const welcomeTitle = document.querySelector('.welcome-title');
+if (welcomeTitle) {
+const text = welcomeTitle.textContent;
+welcomeTitle.textContent = '';
+let i = 0;
+const typeWriter = () => {
+    if (i < text.length) {
+        welcomeTitle.textContent += text.charAt(i);
+        i++;
+        setTimeout(typeWriter, 100);
+    }
+};
+setTimeout(typeWriter, 1000);
+}
+});
+
+// Add CSS for ripple effect
+(function() {
+// Check if style already exists to avoid Turbo conflicts
+let styleElement = document.getElementById('session-style');
+if (!styleElement) {
+styleElement = document.createElement('style');
+styleElement.id = 'session-style';
+styleElement.textContent = `
+.ripple {
+position: absolute;
+border-radius: 50%;
+background: rgba(255, 255, 255, 0.6);
+transform: scale(0);
+animation: ripple-animation 0.6s linear;
+pointer-events: none;
+}
+
+@keyframes ripple-animation {
+to {
+    transform: scale(4);
+    opacity: 0;
+}
+}
+
+.btn-login, .signin-btn {
+position: relative;
+overflow: hidden;
+}
+`;
+document.head.appendChild(styleElement);
+}
+})();
+</script>

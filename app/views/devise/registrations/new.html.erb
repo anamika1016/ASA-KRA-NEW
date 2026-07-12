@@ -1,0 +1,157 @@
+<div class="login-network-page">
+  <div class="login-network-page__background" aria-hidden="true">
+    <span class="network-orbit orbit-1"></span>
+    <span class="network-orbit orbit-2"></span>
+    <span class="network-orbit orbit-3"></span>
+    <span class="network-orbit orbit-4"></span>
+    <span class="network-orbit orbit-5"></span>
+    <span class="network-orbit orbit-6"></span>
+
+    <div class="network-person person-1">
+      <span class="network-person__avatar avatar-sky"></span>
+    </div>
+    <div class="network-person person-2">
+      <span class="network-person__avatar avatar-indigo"></span>
+    </div>
+    <div class="network-person person-3 person-large">
+      <span class="network-person__avatar avatar-cobalt"></span>
+    </div>
+    <div class="network-person person-4">
+      <span class="network-person__avatar avatar-sand"></span>
+    </div>
+    <div class="network-person person-5">
+      <span class="network-person__avatar avatar-teal"></span>
+    </div>
+    <div class="network-person person-6">
+      <span class="network-person__avatar avatar-navy"></span>
+    </div>
+    <div class="network-person person-7">
+      <span class="network-person__avatar avatar-rose"></span>
+    </div>
+    <div class="network-person person-8">
+      <span class="network-person__avatar avatar-mint"></span>
+    </div>
+  </div>
+
+  <div class="login-network-card">
+    <section class="login-network-hero">
+      <div class="login-network-hero__slider" aria-hidden="true">
+        <div class="hero-slide hero-slide--one">
+          <%= image_tag "pexels-mizunokozuki-12899140.jpg", class: "hero-slide__image", alt: "", loading: "eager" %>
+        </div>
+        <div class="hero-slide hero-slide--two">
+          <%= image_tag "pexels-n-voitkevich-5412159.jpg", class: "hero-slide__image", alt: "", loading: "eager" %>
+        </div>
+      </div>
+
+      <div class="login-network-hero__content">
+        <div class="login-network-hero__brand">
+          <div>
+            <p class="login-network-hero__eyebrow">Performance Network</p>
+            <h1>Welcome back</h1>
+          </div>
+        </div>
+
+        <p class="login-network-hero__copy">
+          A cleaner sign-in experience with the connected-team style you shared, while keeping your login behavior unchanged.
+        </p>
+
+        <div class="login-network-hero__indicators" aria-hidden="true">
+          <span class="hero-indicator hero-indicator--one"></span>
+          <span class="hero-indicator hero-indicator--two"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="login-network-form-panel login-network-form-panel--compact">
+      <div class="login-network-form-panel__header">
+        <span class="login-network-form-panel__eyebrow">Employee Registration</span>
+        <h2>Create your account</h2>
+        <p>Use your email, password, employee code, and role to create a new account.</p>
+        <details class="login-network-form-panel__disclosure">
+          <summary class="login-network-form-panel__summary">
+            <span class="login-network-form-panel__summary-label">Need account help?</span>
+          </summary>
+          <div class="login-network-form-panel__note">
+            Employees already present in Employee List do not need to sign up manually. Their login account is created automatically with default password <strong>123456</strong>.
+          </div>
+        </details>
+      </div>
+
+      <% if resource.errors.any? %>
+        <div class="alert alert-danger">
+          <ul class="mb-0">
+            <% resource.errors.full_messages.each do |msg| %>
+              <li><%= msg %></li>
+            <% end %>
+          </ul>
+        </div>
+      <% end %>
+
+      <%= form_for(resource, as: resource_name, url: registration_path(resource_name), html: { autocomplete: "off", data: { turbo: false }, class: "login-network-form" }) do |f| %>
+        <%= hidden_field_tag :authenticity_token, form_authenticity_token %>
+
+        <div class="login-network-form__field">
+          <%= f.label :email, "Email", class: "form-label" %>
+          <%= f.email_field :email, autofocus: true, required: true, placeholder: "Enter your email", class: "form-control" %>
+        </div>
+
+        <div class="login-network-form__field">
+          <%= f.label :password, "Password", class: "form-label" %>
+          <div class="password-toggle-wrap" data-controller="password-toggle">
+            <%= f.password_field :password, required: true, placeholder: "Enter password", class: "form-control password-toggle-input", data: { password_toggle_target: "input" } %>
+            <button type="button" class="password-toggle-btn" data-action="click->password-toggle#toggle" data-password-toggle-target="button" aria-label="Show password" aria-pressed="false">
+              <svg class="password-toggle-icon" data-password-toggle-target="showIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1.5 12s3.8-6.5 10.5-6.5S22.5 12 22.5 12s-3.8 6.5-10.5 6.5S1.5 12 1.5 12Z"></path>
+                <circle cx="12" cy="12" r="3.25"></circle>
+              </svg>
+              <svg class="password-toggle-icon" data-password-toggle-target="hideIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+                <path d="M3 3l18 18"></path>
+                <path d="M10.6 5.7A11.8 11.8 0 0 1 12 5.5c6.7 0 10.5 6.5 10.5 6.5a19.7 19.7 0 0 1-4.1 4.8"></path>
+                <path d="M6.2 6.2A19 19 0 0 0 1.5 12s3.8 6.5 10.5 6.5a10.7 10.7 0 0 0 5.2-1.3"></path>
+                <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="login-network-form__field">
+          <%= f.label :password_confirmation, "Confirm Password", class: "form-label" %>
+          <div class="password-toggle-wrap" data-controller="password-toggle">
+            <%= f.password_field :password_confirmation, required: true, placeholder: "Confirm password", class: "form-control password-toggle-input", data: { password_toggle_target: "input" } %>
+            <button type="button" class="password-toggle-btn" data-action="click->password-toggle#toggle" data-password-toggle-target="button" aria-label="Show password" aria-pressed="false">
+              <svg class="password-toggle-icon" data-password-toggle-target="showIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1.5 12s3.8-6.5 10.5-6.5S22.5 12 22.5 12s-3.8 6.5-10.5 6.5S1.5 12 1.5 12Z"></path>
+                <circle cx="12" cy="12" r="3.25"></circle>
+              </svg>
+              <svg class="password-toggle-icon" data-password-toggle-target="hideIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+                <path d="M3 3l18 18"></path>
+                <path d="M10.6 5.7A11.8 11.8 0 0 1 12 5.5c6.7 0 10.5 6.5 10.5 6.5a19.7 19.7 0 0 1-4.1 4.8"></path>
+                <path d="M6.2 6.2A19 19 0 0 0 1.5 12s3.8 6.5 10.5 6.5a10.7 10.7 0 0 0 5.2-1.3"></path>
+                <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="login-network-form__field">
+          <%= f.label :employee_code, "Employee Code", class: "form-label" %>
+          <%= f.text_field :employee_code, required: true, placeholder: "Enter employee code", class: "form-control" %>
+        </div>
+
+        <div class="login-network-form__field">
+          <%= f.label :role, "Select Role", class: "form-label" %>
+          <%= f.select :role, options_for_select([["Employee", "employee"], ["HOD", "hod"]]), { prompt: "Choose your role" }, class: "form-select", required: true %>
+        </div>
+
+        <div class="login-network-form__actions">
+          <%= f.submit "Create Account", class: "btn btn-auth" %>
+        </div>
+      <% end %>
+
+      <div class="login-form-links">
+        <%= render "devise/shared/links" %>
+      </div>
+    </section>
+  </div>
+</div>
