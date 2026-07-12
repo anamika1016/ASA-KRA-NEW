@@ -1,2 +1,13 @@
 /log/*
 /config/master.key
+/vendor/bundle/
+/.bundle/
+/public/assets/
+/log/*
+!/log/.keep
+/tmp/*
+!/tmp/.keep
+/storage/*
+!/storage/.keep
+.env
+.env.*

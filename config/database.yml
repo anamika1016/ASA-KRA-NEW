@@ -3,7 +3,7 @@ default: &default
   encoding: unicode
   username: postgres
   password: postgres
-  host: localhost
+  host: 127.0.0.1
   pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
 
 development:
@@ -11,8 +11,13 @@ development:
   database: asakra
 
 test:
-  <<: *default
+  adapter: postgresql
+  encoding: unicode
   database: asakra_test
+  pool: 5
+  username: myuser
+  password: <%= ENV['MYAPP_DATABASE_PASSWORD'] %>
+  host: 127.0.0.1
 
 production:
   primary:
@@ -22,13 +27,34 @@ production:
     pool: 5
     username: myuser
     password: <%= ENV['MYAPP_DATABASE_PASSWORD'] %>
-    host: localhost
+    host: 127.0.0.1
 
   cable:
     adapter: postgresql
     encoding: unicode
-    database: asakra_production
+    database: asakra_production_cable
     pool: 5
     username: myuser
     password: <%= ENV['MYAPP_DATABASE_PASSWORD'] %>
-    host: localhost
+    host: 127.0.0.1
+    migrations_paths: db/cable_migrate
+
+  queue:
+    adapter: postgresql
+    encoding: unicode
+    database: asakra_production_queue
+    pool: 5
+    username: myuser
+    password: <%= ENV['MYAPP_DATABASE_PASSWORD'] %>
+    host: 127.0.0.1
+    migrations_paths: db/queue_migrate
+
+  cache:
+    adapter: postgresql
+    encoding: unicode
+    database: asakra_production_cache
+    pool: 5
+    username: myuser
+    password: <%= ENV['MYAPP_DATABASE_PASSWORD'] %>
+    host: 127.0.0.1
+    migrations_paths: db/cache_migrate
