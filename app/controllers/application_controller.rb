@@ -10,9 +10,9 @@ class ApplicationController < ActionController::Base
     devise_parameter_sanitizer.permit(:sign_up, keys: [ :employee_code, :role ])
   end
 
-  # Override Devise's after_sign_in_path_for to always redirect to dashboard
+  # After login, always land on User Profile
   def after_sign_in_path_for(resource)
-    dashboard_path
+    settings_path
   end
 
   def sign_out_inactive_portal_user
