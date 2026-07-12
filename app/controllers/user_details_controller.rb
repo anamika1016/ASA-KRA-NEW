@@ -1116,8 +1116,8 @@ class UserDetailsController < ApplicationController
             row = {}
             header.each_with_index do |col_name, index|
               next if col_name.nil?
-              key = col_name.to_s.strip.downcase.gsub(/\s+/, "_")
-              row[key] = row_data[index]
+              key = normalize_user_detail_import_header(col_name)
+              row[key] = row_data[index] if key.present?
             end
 
 
@@ -1125,7 +1125,7 @@ class UserDetailsController < ApplicationController
             employee_name = row["employee_name"]
             employee_email = row["employee_email"]
             employee_code = row["employee_code"]
-            post = row["post"] || row["designation"]
+            post = row["post"] || row["designation"] || row["role"]
             location = row["location"] || row["posting_location"] || row["work_location"]
 
             mobile_number = extract_employee_mobile_number(row)
@@ -1134,10 +1134,10 @@ class UserDetailsController < ApplicationController
             l1_employer_name = row["l1_employer_name"] || row["l1_employee_name"]
             l2_code = row["l2_code"] || row["l2_employer_code"]
             l2_employer_name = row["l2_employer_name"]
-            obs_code1 = row["obs_code_1"] || row["obs_code1"] || row["observer_code_1"] || row["observer1_code"] || row["observer_1_code"] || row["bw_code_1"] || row["bw_code1"]
-            obs_code2 = row["obs_code_2"] || row["obs_code2"] || row["observer_code_2"] || row["observer2_code"] || row["observer_2_code"] || row["bw_code_2"] || row["bw_code2"]
-            obs_code3 = row["obs_code_3"] || row["obs_code3"] || row["observer_code_3"] || row["observer3_code"] || row["observer_3_code"] || row["bw_code_3"] || row["bw_code3"]
-            obs_code4 = row["obs_code_4"] || row["obs_code4"] || row["observer_code_4"] || row["observer4_code"] || row["observer_4_code"] || row["bw_code_4"] || row["bw_code4"]
+            obs_code1 = row["obs_code_1"] || row["obs_code1"] || row["observer_code_1"] || row["observer1_code"] || row["observer_1_code"] || row["bw_code_1"] || row["bw_code1"] || row["org_code_1"] || row["org_code1"]
+            obs_code2 = row["obs_code_2"] || row["obs_code2"] || row["observer_code_2"] || row["observer2_code"] || row["observer_2_code"] || row["bw_code_2"] || row["bw_code2"] || row["org_code_2"] || row["org_code2"]
+            obs_code3 = row["obs_code_3"] || row["obs_code3"] || row["observer_code_3"] || row["observer3_code"] || row["observer_3_code"] || row["bw_code_3"] || row["bw_code3"] || row["org_code_3"] || row["org_code3"]
+            obs_code4 = row["obs_code_4"] || row["obs_code4"] || row["observer_code_4"] || row["observer4_code"] || row["observer_4_code"] || row["bw_code_4"] || row["bw_code4"] || row["org_code_4"] || row["org_code4"]
             manager_values = normalize_import_manager_values(l1_code, l1_employer_name, l2_code, l2_employer_name)
             l1_code = manager_values[:l1_code]
             l1_employer_name = manager_values[:l1_employer_name]
@@ -1157,18 +1157,18 @@ class UserDetailsController < ApplicationController
 
 
             months = {
-              april: normalize_percentage(row["april"]),
+              april: normalize_percentage(row["april"] || row["apr"]),
               may: normalize_percentage(row["may"]),
-              june: normalize_percentage(row["june"]),
-              july: normalize_percentage(row["july"]),
-              august: normalize_percentage(row["august"]),
-              september: normalize_percentage(row["september"]),
-              october: normalize_percentage(row["october"]),
-              november: normalize_percentage(row["november"]),
-              december: normalize_percentage(row["december"]),
-              january: normalize_percentage(row["january"]),
-              february: normalize_percentage(row["february"]),
-              march: normalize_percentage(row["march"])
+              june: normalize_percentage(row["june"] || row["jun"]),
+              july: normalize_percentage(row["july"] || row["jul"]),
+              august: normalize_percentage(row["august"] || row["aug"]),
+              september: normalize_percentage(row["september"] || row["sep"] || row["sept"]),
+              october: normalize_percentage(row["october"] || row["oct"]),
+              november: normalize_percentage(row["november"] || row["nov"]),
+              december: normalize_percentage(row["december"] || row["dec"]),
+              january: normalize_percentage(row["january"] || row["jan"]),
+              february: normalize_percentage(row["february"] || row["feb"]),
+              march: normalize_percentage(row["march"] || row["mar"])
             }
 
 
@@ -1600,6 +1600,40 @@ class UserDetailsController < ApplicationController
     end
 
     nil
+  end
+
+  def normalize_user_detail_import_header(value)
+    key = value.to_s.strip.downcase.gsub(/[^a-z0-9]+/, "_").gsub(/\A_+|_+\z/, "")
+    {
+      "apr" => "april",
+      "jun" => "june",
+      "jul" => "july",
+      "aug" => "august",
+      "sep" => "september",
+      "sept" => "september",
+      "oct" => "october",
+      "nov" => "november",
+      "dec" => "december",
+      "jan" => "january",
+      "feb" => "february",
+      "mar" => "march",
+      "mobile_no" => "mobile_number",
+      "mobile" => "mobile_number",
+      "unit_of_measure" => "unit_of_measurement",
+      "key_result_indicators" => "key_result_indicator",
+      "org_code1" => "org_code_1",
+      "org_code2" => "org_code_2",
+      "org_code3" => "org_code_3",
+      "org_code4" => "org_code_4",
+      "obs_code1" => "obs_code_1",
+      "obs_code2" => "obs_code_2",
+      "obs_code3" => "obs_code_3",
+      "obs_code4" => "obs_code_4",
+      "bw_code1" => "bw_code_1",
+      "bw_code2" => "bw_code_2",
+      "bw_code3" => "bw_code_3",
+      "bw_code4" => "bw_code_4"
+    }[key] || key
   end
 
   def normalize_import_financial_year(value)
