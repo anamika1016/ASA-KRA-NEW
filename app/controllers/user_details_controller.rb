@@ -913,32 +913,32 @@ class UserDetailsController < ApplicationController
     employee_detail_id = params[:employee_detail_id]
     financial_year = normalize_financial_year(params[:financial_year]) || current_financial_year
     user_details_params = params[:user_details]
+    redirect_path = new_user_detail_path(
+      department_id: department_id,
+      employee_detail_id: employee_detail_id,
+      financial_year: financial_year
+    )
 
     # Enhanced validation
     if department_id.blank?
-      render json: { error: "Department ID is required" }, status: :bad_request
-      return
+      return bulk_create_error_response("Department ID is required", :bad_request, new_user_detail_path(financial_year: financial_year))
     end
 
     if employee_detail_id.blank?
-      render json: { error: "Employee Detail ID is required" }, status: :bad_request
-      return
+      return bulk_create_error_response("Employee Detail ID is required", :bad_request, new_user_detail_path(department_id: department_id, financial_year: financial_year))
     end
 
     if user_details_params.blank?
-      render json: { error: "No user details provided" }, status: :bad_request
-      return
+      return bulk_create_error_response("No user details provided", :bad_request, redirect_path)
     end
 
     # Validate that department and employee exist
     unless Department.exists?(department_id)
-      render json: { error: "Department not found" }, status: :not_found
-      return
+      return bulk_create_error_response("Department not found", :not_found, new_user_detail_path(financial_year: financial_year))
     end
 
     unless EmployeeDetail.exists?(employee_detail_id)
-      render json: { error: "Employee not found" }, status: :not_found
-      return
+      return bulk_create_error_response("Employee not found", :not_found, new_user_detail_path(department_id: department_id, financial_year: financial_year))
     end
 
     created_count = 0
@@ -1042,29 +1042,41 @@ class UserDetailsController < ApplicationController
     end
 
     if errors.empty? || (created_count + updated_count) > 0
-      message = []
-      message << "#{created_count} records created" if created_count > 0
-      message << "#{updated_count} records updated" if updated_count > 0
-      message = [ "No changes made" ] if message.empty?
+      message_parts = []
+      message_parts << "#{created_count} records created" if created_count > 0
+      message_parts << "#{updated_count} records updated" if updated_count > 0
+      message_parts = [ "No changes made" ] if message_parts.empty?
+      success_message = message_parts.join(", ")
+      success_message += ". Warnings: #{errors.join('; ')}" if errors.present?
 
       response_data = {
         success: true,
-        message: message.join(", "),
+        message: success_message,
         created: created_count,
         updated: updated_count
       }
-
       response_data[:warnings] = errors if errors.present?
 
-      render json: response_data
+      respond_to do |format|
+        format.html { redirect_to redirect_path, notice: success_message }
+        format.json { render json: response_data }
+        format.any { redirect_to redirect_path, notice: success_message }
+      end
     else
-      render json: {
-        success: false,
-        error: "Failed to save records",
-        errors: errors,
-        created: created_count,
-        updated: updated_count
-      }, status: :unprocessable_entity
+      error_message = "Failed to save records: #{errors.join('; ')}"
+      respond_to do |format|
+        format.html { redirect_to redirect_path, alert: error_message }
+        format.json {
+          render json: {
+            success: false,
+            error: "Failed to save records",
+            errors: errors,
+            created: created_count,
+            updated: updated_count
+          }, status: :unprocessable_entity
+        }
+        format.any { redirect_to redirect_path, alert: error_message }
+      end
     end
   end
 
@@ -1757,6 +1769,14 @@ class UserDetailsController < ApplicationController
 
   def bulk_create_params
     params.permit(:department_id, :employee_detail_id, :financial_year, user_details: {})
+  end
+
+  def bulk_create_error_response(message, status, redirect_path)
+    respond_to do |format|
+      format.html { redirect_to redirect_path, alert: message }
+      format.json { render json: { error: message }, status: status }
+      format.any { redirect_to redirect_path, alert: message }
+    end
   end
 
   def set_financial_year_context

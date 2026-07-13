@@ -132,7 +132,7 @@
             
             
             <% if activity_detail_rows.any? %>
-              <%= form_with url: bulk_create_user_details_path, method: :post, local: true, id: 'bulk-form' do |form| %>
+              <%= form_with url: bulk_create_user_details_path, method: :post, local: true, data: { turbo: false }, id: 'bulk-form' do |form| %>
                 <%= form.hidden_field :department_id, value: resolved_department_id %>
                 <%= form.hidden_field :employee_detail_id, value: params[:employee_detail_id] %>
                 <%= form.hidden_field :financial_year, value: @selected_financial_year %>

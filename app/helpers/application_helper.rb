@@ -292,4 +292,29 @@ module ApplicationHelper
   def employee_remarks_column_label(_month = nil)
     "EMP REMARKS"
   end
+
+  # Parses values like "100", "100%", "1,000.5" into Float. Returns nil for blank/non-numeric text.
+  def parse_metric_number(value)
+    text = value.to_s.strip.delete(",").gsub("%", "").strip
+    return nil if text.blank?
+    return nil unless text.match?(/\A-?\d+(?:\.\d+)?\z/)
+
+    text.to_f
+  end
+
+  def metric_target_present?(value)
+    return false if value.blank?
+
+    number = parse_metric_number(value)
+    number.nil? || number.positive?
+  end
+
+  def progress_percentage_for(target_value, achievement_value)
+    target_number = parse_metric_number(target_value)
+    return nil unless target_number&.positive?
+    return nil if achievement_value.blank?
+
+    achievement_number = parse_metric_number(achievement_value) || achievement_value.to_s.delete(",").to_f
+    (((achievement_number / target_number) * 100.0 * 100).floor / 100.0)
+  end
 end

@@ -199,10 +199,7 @@
             <tbody class="bg-white divide-y divide-gray-200">
               <%
                 target_present_for_display = lambda do |detail, month_symbol|
-                  target_value = detail.public_send(month_symbol)
-                  target_text = target_value.to_s.delete(",").strip
-                  target_is_numeric = target_text.match?(/\A-?\d+(?:\.\d+)?\z/)
-                  target_value.present? && (!target_is_numeric || target_text.to_f.positive?)
+                  metric_target_present?(detail.public_send(month_symbol))
                 end
                 visible_detail_index = 0
               %>
@@ -231,9 +228,8 @@
                     <% display_months.each do |month_symbol, month_name| %>
                       <%
                         target_value = detail.send(month_symbol)
-                        target_text = target_value.to_s.delete(",").strip
-                        target_is_numeric = target_text.match?(/\A-?\d+(?:\.\d+)?\z/)
-                        has_target = target_value.present? && (!target_is_numeric || target_text.to_f.positive?)
+                        has_target = metric_target_present?(target_value)
+                        target_number = parse_metric_number(target_value)
                         achievement_record = existing_achievements[month_symbol.to_s]
                         achievement_value = achievement_record&.achievement
                         employee_remarks = achievement_record&.employee_remarks
@@ -242,10 +238,8 @@
                         l2_can_edit_month_remark = @can_l2_approve_or_return &&
                                                    achievement_record.present? &&
                                                    ["l1_approved", "l2_returned"].include?(achievement_record.status.to_s)
-                        target_number = target_is_numeric ? target_text.to_f : 0.0
-                        achievement_number = achievement_value.to_s.delete(",").to_f
-                        progress_percentage = has_target && target_number.positive? && achievement_value.present? ? (((achievement_number / target_number) * 100.0 * 100).floor / 100.0) : nil
-                        if has_target && target_number.positive?
+                        progress_percentage = progress_percentage_for(target_value, achievement_value)
+                        if has_target && target_number&.positive?
                           monthly_summary_totals[month_symbol][:progress_sum] += (progress_percentage || 0.0)
                           monthly_summary_totals[month_symbol][:progress_count] += 1
                         end
@@ -370,15 +364,15 @@
                                 .select { |remark| remark.l2_remarks.present? || remark.l2_percentage.present? }
                                 .max_by(&:updated_at)
 
-      l1_percentages = all_quarter_achievements.filter_map { |a| a.achievement_remark&.l1_percentage&.to_f }
-      l2_percentages = all_quarter_achievements.filter_map { |a| a.achievement_remark&.l2_percentage&.to_f }
-      saved_l1_average = l1_percentages.any? ? (l1_percentages.sum / l1_percentages.size).round(1) : 0.0
-      saved_l2_average = l2_percentages.any? ? (l2_percentages.sum / l2_percentages.size).round(1) : 0.0
+      l1_percentages = all_quarter_achievements.filter_map { |a| a.achievement_remark&.l1_percentage&.presence&.to_f }
+      l2_percentages = all_quarter_achievements.filter_map { |a| a.achievement_remark&.l2_percentage&.presence&.to_f }
+      saved_l1_average = l1_percentages.any? ? ((l1_percentages.sum / l1_percentages.size) * 100).floor / 100.0 : nil
+      saved_l2_average = l2_percentages.any? ? ((l2_percentages.sum / l2_percentages.size) * 100).floor / 100.0 : nil
 
       final_l1_average = review_progress_percentage || latest_l1_remark_record&.l1_percentage.presence&.to_f || saved_l1_average
       final_l2_average = review_progress_percentage || latest_l2_remark_record&.l2_percentage.presence&.to_f || saved_l2_average
-      final_l1_average_display = format('%.2f', final_l1_average.to_f)
-      final_l2_average_display = format('%.2f', final_l2_average.to_f)
+      final_l1_average_display = final_l1_average.nil? ? "0.00" : format('%.2f', final_l1_average.to_f)
+      final_l2_average_display = final_l2_average.nil? ? "0.00" : format('%.2f', final_l2_average.to_f)
 
       unique_l1_remarks = latest_l1_remark_record&.l1_remarks.present? ? [ latest_l1_remark_record.l1_remarks ] : []
       unique_l2_remarks = latest_l2_remark_record&.l2_remarks.present? ? [ latest_l2_remark_record.l2_remarks ] : []
