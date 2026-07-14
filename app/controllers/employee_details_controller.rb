@@ -5,15 +5,13 @@ require "set"
 
 class EmployeeDetailsController < ApplicationController
   before_action :set_employee_detail, only: [ :edit, :update, :destroy, :toggle_portal_status ]
-  load_and_authorize_resource except: [ :approve, :return, :l2_approve, :l2_return, :edit_l1, :edit_l2, :toggle_portal_status, :bulk_update_portal_status, :quarterly_pli, :quarterly_pli_detail, :save_quarterly_pli, :observer_1, :observer_2, :observer_3, :observer_4, :observer_pli_detail, :save_observer_pli ]
+  load_and_authorize_resource except: [ :approve, :return, :l2_approve, :l2_return, :edit_l1, :edit_l2, :toggle_portal_status, :bulk_update_portal_status, :bulk_destroy, :quarterly_pli, :export_quarterly_pli_xlsx, :quarterly_pli_detail, :save_quarterly_pli, :observer_1, :observer_2, :observer_3, :observer_4, :observer_pli_detail, :save_observer_pli ]
 
   def index
     @employee_detail = EmployeeDetail.new
     @q = EmployeeDetail.ransack(params[:q])
     @employee_details = @q.result.order(Arel.sql("LOWER(employee_name) ASC")).page(params[:page]).per(10)
-    @employee_name_by_code = employee_name_lookup_for_codes(
-      @employee_details.flat_map { |employee| [ employee.obs_code1, employee.obs_code2, employee.obs_code3, employee.obs_code4 ] }
-    )
+    load_observer_names_for_employee_list
   end
 
   def create
@@ -24,6 +22,7 @@ class EmployeeDetailsController < ApplicationController
       redirect_to employee_details_path, notice: "Employee created successfully."
     else
       @employee_details = @q.result.order(Arel.sql("LOWER(employee_name) ASC")).page(params[:page]).per(10)
+      load_observer_names_for_employee_list
       flash.now[:alert] = "Failed to create employee."
       render :index, status: :unprocessable_entity
     end
@@ -70,18 +69,39 @@ class EmployeeDetailsController < ApplicationController
   def bulk_update_portal_status
     authorize! :manage, EmployeeDetail
 
-    employee_ids = Array(params[:employee_detail_ids]).reject(&:blank?)
-    if employee_ids.empty?
+    employees = bulk_selected_employee_scope
+    if employees.none?
       redirect_to employee_details_path(anchor: "employee-list"), alert: "Please select at least one employee."
       return
     end
 
     portal_active = ActiveModel::Type::Boolean.new.cast(params[:portal_active])
-    updated_count = EmployeeDetail.where(id: employee_ids).update_all(portal_active: portal_active, updated_at: Time.current)
+    updated_count = employees.update_all(portal_active: portal_active, updated_at: Time.current)
     status_label = portal_active ? "Active" : "Inactive"
 
     redirect_to employee_details_path(anchor: "employee-list"),
                 notice: "#{updated_count} employee(s) marked #{status_label}."
+  end
+
+  def bulk_destroy
+    authorize! :manage, EmployeeDetail
+
+    employees = bulk_selected_employee_scope
+    if employees.none?
+      redirect_to employee_details_path(anchor: "employee-list"), alert: "Please select at least one employee."
+      return
+    end
+
+    deleted_count = 0
+    employees.find_each do |employee|
+      deleted_count += 1 if employee.destroy
+    end
+
+    redirect_to employee_details_path(anchor: "employee-list"),
+                notice: "#{deleted_count} employee(s) deleted successfully."
+  rescue => e
+    Rails.logger.error "Bulk employee delete failed: #{e.message}"
+    redirect_to employee_details_path(anchor: "employee-list"), alert: "Failed to delete selected employees. Please try again."
   end
 
   def export_xlsx
@@ -93,8 +113,13 @@ class EmployeeDetailsController < ApplicationController
     workbook.add_worksheet(name: "Employees") do |sheet|
       sheet.add_row [
         "Name", "Email", "Employee Code",
-        "L1 Code", "L1 Name", "OBS Code 1", "OBS Code 2", "OBS Code 3", "OBS Code 4", "Post", "Location", "Department"
+        "L1 Code", "L1 Name",
+        "OBS Code 1", "OBS Name 1", "OBS Code 2", "OBS Name 2",
+        "OBS Code 3", "OBS Name 3", "OBS Code 4", "OBS Name 4",
+        "Post", "Location", "Department"
       ]
+
+      observer_names_by_code = observer_names_by_code_for(@employee_details)
 
       @employee_details.each do |emp|
         sheet.add_row [
@@ -104,9 +129,13 @@ class EmployeeDetailsController < ApplicationController
           emp.l1_code,
           emp.l1_employer_name,
           emp.obs_code1,
+          observer_names_by_code[emp.obs_code1.to_s.strip.downcase],
           emp.obs_code2,
+          observer_names_by_code[emp.obs_code2.to_s.strip.downcase],
           emp.obs_code3,
+          observer_names_by_code[emp.obs_code3.to_s.strip.downcase],
           emp.obs_code4,
+          observer_names_by_code[emp.obs_code4.to_s.strip.downcase],
           emp.post,
           emp.location,
           emp.department
@@ -210,9 +239,6 @@ class EmployeeDetailsController < ApplicationController
       return
     end
 
-    spreadsheet = Roo::Spreadsheet.open(file.path)
-    header = spreadsheet.row(1).map { |value| normalize_import_header(value) }
-
     header_map = {
       "employeeid" => "employee_id",
       "name" => "employee_name",
@@ -268,61 +294,90 @@ class EmployeeDetailsController < ApplicationController
       "annualtargetfy" => "annual_target_fy",
       "annualtargetfy202627" => "annual_target_fy",
       "april" => "april",
+      "apr" => "april",
       "may" => "may",
       "june" => "june",
+      "jun" => "june",
       "july" => "july",
+      "jul" => "july",
       "august" => "august",
+      "aug" => "august",
       "september" => "september",
+      "sep" => "september",
+      "sept" => "september",
       "october" => "october",
+      "oct" => "october",
       "november" => "november",
+      "nov" => "november",
       "december" => "december",
+      "dec" => "december",
       "january" => "january",
+      "jan" => "january",
       "february" => "february",
-      "march" => "march"
+      "feb" => "february",
+      "march" => "march",
+      "mar" => "march"
     }
 
     employee_count = 0
     target_count = 0
     import_errors = []
+    processed_employee_ids = Set.new
+    sheets_processed = 0
+    spreadsheet = Roo::Spreadsheet.open(file.path)
+    sheet_names = spreadsheet.respond_to?(:sheets) && spreadsheet.sheets.present? ? spreadsheet.sheets : [ spreadsheet.default_sheet || "Sheet1" ]
 
-    (2..spreadsheet.last_row).each do |i|
-      row = Hash[[ header, spreadsheet.row(i) ].transpose]
-      mapped_row = row.each_with_object({}) do |(key, value), mapped|
-        attribute_name = header_map[key.to_s]
-        next unless attribute_name
-        next if value.nil?
-
-        cleaned_value = value.is_a?(String) ? value.strip : value
-        next if cleaned_value.respond_to?(:blank?) ? cleaned_value.blank? : cleaned_value.nil?
-
-        mapped[attribute_name] = cleaned_value
+    sheet_names.each do |sheet_name|
+      if spreadsheet.respond_to?(:default_sheet=) && spreadsheet.respond_to?(:sheets) && spreadsheet.sheets.include?(sheet_name)
+        spreadsheet.default_sheet = sheet_name
       end
 
-      begin
-        next if mapped_row.empty?
+      next if spreadsheet.last_row.to_i < 2
 
-        normalize_import_manager_attributes!(mapped_row)
-        employee_attributes = mapped_row.slice(
-          "employee_id", "employee_name", "employee_email", "employee_code", "mobile_number",
-          "l1_code", "l1_employer_name", "l2_code", "l2_employer_name",
-          "obs_code1", "obs_code2", "obs_code3", "obs_code4",
-          "post", "location", "department"
-        )
-        employee_detail = find_existing_employee_detail(employee_attributes) || EmployeeDetail.new(employee_id: mapped_row["employee_id"].presence || mapped_row["employee_code"].presence || SecureRandom.uuid)
-        employee_detail.assign_attributes(employee_attributes)
-        employee_detail.post = "Imported" if employee_detail.post.blank?
-        employee_detail.save!
-        employee_count += 1
-        target_count += sync_imported_department_target_data!(employee_detail, mapped_row)
-      rescue => e
-        Rails.logger.error "Employee import failed for row #{i}: #{e.message}"
-        import_errors << "Row #{i}: #{e.message}"
-        next
+      sheets_processed += 1
+      header = spreadsheet.row(1).map { |value| normalize_import_header(value) }
+
+      (2..spreadsheet.last_row).each do |i|
+        row_label = sheet_names.size > 1 ? "#{sheet_name} Row #{i}" : "Row #{i}"
+        row = Hash[[ header, spreadsheet.row(i) ].transpose]
+        mapped_row = row.each_with_object({}) do |(key, value), mapped|
+          attribute_name = header_map[key.to_s]
+          next unless attribute_name
+          next if value.nil?
+
+          cleaned_value = value.is_a?(String) ? value.strip : value
+          next if cleaned_value.respond_to?(:blank?) ? cleaned_value.blank? : cleaned_value.nil?
+
+          mapped[attribute_name] = cleaned_value
+        end
+
+        begin
+          next if mapped_row.empty?
+
+          normalize_import_manager_attributes!(mapped_row)
+          employee_attributes = mapped_row.slice(
+            "employee_id", "employee_name", "employee_email", "employee_code", "mobile_number",
+            "l1_code", "l1_employer_name", "l2_code", "l2_employer_name",
+            "obs_code1", "obs_code2", "obs_code3", "obs_code4",
+            "post", "location", "department"
+          )
+          employee_detail = find_existing_employee_detail(employee_attributes) || EmployeeDetail.new(employee_id: mapped_row["employee_id"].presence || mapped_row["employee_code"].presence || SecureRandom.uuid)
+          employee_detail.assign_attributes(employee_attributes)
+          employee_detail.post = "Imported" if employee_detail.post.blank?
+          employee_detail.save!
+          employee_count += 1 if processed_employee_ids.add?(employee_detail.id)
+          target_count += sync_imported_department_target_data!(employee_detail, mapped_row)
+        rescue => e
+          Rails.logger.error "Employee import failed for #{row_label}: #{e.message}"
+          import_errors << "#{row_label}: #{e.message}"
+          next
+        end
       end
     end
 
     message = "✅ #{employee_count} employee(s) imported successfully!"
     message += " #{target_count} department/KRI row(s) updated." if target_count.positive?
+    message += " Processed #{sheets_processed} sheet(s)." if sheets_processed.positive?
 
     if import_errors.any?
       redirect_to employee_details_path, alert: "#{message} Some rows failed: #{import_errors.first(10).join(', ')}"
@@ -335,7 +390,7 @@ class EmployeeDetailsController < ApplicationController
   def l1
     authorize! :l1, EmployeeDetail
 
-    if current_user.hod?
+    if current_user.hod? || current_user.admin?
       # PERFORMANCE FIX: Optimize includes to preload all necessary associations
       @employee_details = EmployeeDetail.includes(
         user_details: [
@@ -345,10 +400,17 @@ class EmployeeDetailsController < ApplicationController
         ]
       ).all
     else
+      reviewer_code = current_user.employee_code.to_s.strip.downcase
+      reviewer_email = current_user.email.to_s.strip.downcase
+
       # PERFORMANCE FIX: Optimize includes to preload all necessary associations
       @employee_details = EmployeeDetail
                             .where(status: [ "pending", "l1_returned", "l1_approved", "l2_returned", "l2_approved" ])
-                            .where(l1_code: current_user.employee_code)
+                            .where(
+                              "(:code != '' AND LOWER(TRIM(COALESCE(l1_code, ''))) = :code) OR (:email != '' AND LOWER(TRIM(COALESCE(l1_employer_name, ''))) = :email)",
+                              code: reviewer_code,
+                              email: reviewer_email
+                            )
                             .includes(
                               user_details: [
                                 :activity,
@@ -359,17 +421,7 @@ class EmployeeDetailsController < ApplicationController
     end
 
     prepare_review_filters(@employee_details)
-    preload_observer_review_cache(
-      @employee_details,
-      financial_year: @selected_financial_year,
-      months: @selected_review_month.present? ? [ @selected_review_month ] : review_months
-    )
 
-    # Group employees by quarters for display
-    @quarterly_data = group_employees_by_quarters(@employee_details)
-
-    # Create the data structure expected by the view
-    @quarterly_employee_data = build_quarterly_employee_data(@employee_details)
     @monthly_employee_data = build_monthly_employee_data(
       @employee_details,
       approval_level: "l1",
@@ -377,9 +429,6 @@ class EmployeeDetailsController < ApplicationController
       financial_year: @selected_financial_year
     )
     @monthly_employee_data = filter_l1_rows_by_observer_chain(@monthly_employee_data)
-
-    # PERFORMANCE FIX: Pre-calculate summary data to avoid processing in view
-    @summary_data = calculate_summary_data(@employee_details)
   end
 
   # Show employee details with quarterly view
@@ -654,7 +703,7 @@ end
     end
 
     @selected_quarterly_pli_quarter = params[:quarter].presence
-    @selected_financial_year = selected_financial_year
+    @selected_financial_year = selected_financial_year || current_financial_year
     @quarter_options = get_all_quarters.map do |quarter|
       [ "#{quarter} (#{get_quarter_months(quarter).map { |month| month_label(month) }.join('-')})", quarter ]
     end
@@ -672,17 +721,97 @@ end
       employee.user_details.map(&:financial_year)
     }.compact.reject(&:blank?).uniq.sort.reverse
 
-    @selected_financial_year ||= @financial_year_options.first
-    preload_observer_review_cache(
-      employee_details,
-      financial_year: @selected_financial_year,
-      quarters: @selected_quarterly_pli_quarter.present? ? [ @selected_quarterly_pli_quarter ] : get_all_quarters
-    )
+    @selected_financial_year ||= @financial_year_options.first || current_financial_year
+    @financial_year_options |= [ @selected_financial_year ]
+    @financial_year_options.compact!
+    @financial_year_options.sort!.reverse!
     @quarterly_pli_rows = build_quarterly_pli_rows(
       employee_details,
       financial_year: @selected_financial_year,
       quarter: @selected_quarterly_pli_quarter
     )
+  end
+
+  def export_quarterly_pli_xlsx
+    unless quarterly_pli_authorized?
+      redirect_to root_path, alert: "You are not authorized to export Quarterly PLI %."
+      return
+    end
+
+    selected_quarter = params[:quarter].presence
+    selected_year = selected_financial_year || current_financial_year
+    employee_details = quarterly_pli_employee_scope.includes(
+      quarterly_pli_reviews: :reviewed_by,
+      user_details: [
+        :activity,
+        :department,
+        achievements: :achievement_remark
+      ]
+    )
+
+    financial_year_options = employee_details.flat_map { |employee|
+      employee.user_details.map(&:financial_year)
+    }.compact.reject(&:blank?).uniq.sort.reverse
+    selected_year ||= financial_year_options.first || current_financial_year
+
+    rows = build_quarterly_pli_rows(
+      employee_details,
+      financial_year: selected_year,
+      quarter: selected_quarter
+    )
+
+    package = Axlsx::Package.new
+    workbook = package.workbook
+    styles = workbook.styles
+    header_style = styles.add_style(
+      bg_color: "1F2937",
+      fg_color: "FFFFFF",
+      b: true,
+      alignment: { horizontal: :center, vertical: :center, wrap_text: true },
+      border: { style: :thin, color: "CBD5E1" }
+    )
+    cell_style = styles.add_style(
+      alignment: { vertical: :top, wrap_text: true },
+      border: { style: :thin, color: "E5E7EB" }
+    )
+
+    workbook.add_worksheet(name: "Quarterly PLI") do |sheet|
+      sheet.add_row [
+        "Employee Code",
+        "Name",
+        "Department",
+        "Financial Year",
+        "Quarter",
+        "Calculated %",
+        "Final PLI %",
+        "Final L1 Remarks"
+      ], style: header_style
+
+      rows.each do |row|
+        employee = row[:employee]
+        review = row[:review]
+
+        sheet.add_row [
+          employee.employee_code.presence || "-",
+          employee.employee_name.presence || "-",
+          employee.department.presence || "-",
+          row[:financial_year].presence || "-",
+          row[:quarter_label].presence || row[:quarter].presence || "-",
+          quarterly_pli_export_percentage(row[:calculated_percentage]),
+          review&.final_percentage.present? ? "#{format('%.2f', review.final_percentage.to_f)}%" : "-",
+          quarterly_pli_export_l1_remarks(row)
+        ], style: cell_style
+      end
+
+      sheet.column_widths 18, 28, 24, 18, 24, 16, 16, 60
+    end
+
+    filename_parts = [ "quarterly_pli", selected_year, selected_quarter.presence ].compact
+    tempfile = Tempfile.new([ filename_parts.join("_"), ".xlsx" ])
+    package.serialize(tempfile.path)
+    send_file tempfile.path,
+              filename: "#{filename_parts.join('_')}.xlsx",
+              type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
   end
 
   def quarterly_pli_detail
@@ -716,6 +845,7 @@ end
       financial_year: financial_year,
       quarter: quarter
     )
+    @review = current_quarterly_pli_review_for(@review, @employee_detail, financial_year, quarter)
   end
 
   def save_quarterly_pli
@@ -824,6 +954,22 @@ end
     @observer_context = true
     @observer_level = observer_level
     @observer_title = observer_menu_title(observer_level)
+    @financial_year = financial_year
+    @quarter = quarter
+    @month = month
+    @detail_payload = quarter_pli_payload_for(
+      @employee_detail,
+      financial_year,
+      quarter,
+      require_ready: false,
+      month: month
+    )
+    unless @detail_payload
+      redirect_to observer_pli_redirect_path(observer_level, financial_year: financial_year, quarter: quarter), alert: quarterly_pli_review_complete_message(@employee_detail)
+      return
+    end
+
+    @quarter_label = "#{quarter} (#{@detail_payload[:months].map { |payload_month| payload_month[:label] }.join('-')})"
     @observer_review = ObserverPliReview.find_by(
       employee_detail: @employee_detail,
       financial_year: financial_year,
@@ -832,13 +978,7 @@ end
       observer_level: observer_level
     )
 
-    prepare_employee_detail_show(
-      financial_year: financial_year,
-      month: month,
-      quarter: quarter
-    )
-
-    render :show
+    render :observer_pli_detail
   end
 
   def save_observer_pli
@@ -884,10 +1024,9 @@ end
 
     if review.save
       save_observer_activity_remarks(employee_detail, month, observer_level)
-      @observer_review_lookup = nil
-      @approved_observer_review_keys = nil
-      send_l1_sms_after_observer_chain(employee_detail, financial_year, quarter, month) if review.status == "approved"
+      l1_sms_result = review.status == "approved" ? notify_l1_after_observer_chain_approval(employee_detail, financial_year, quarter, month) : nil
       notice_message = review.status == "returned" ? "#{observer_menu_title(observer_level)} returned #{month_label(month)} for #{employee_detail.employee_name}." : "#{observer_menu_title(observer_level)} approved #{month_label(month)} for #{employee_detail.employee_name}."
+      notice_message = "#{notice_message} L1 SMS sent." if l1_sms_result&.dig(:success) && l1_sms_result[:sent]
       redirect_to observer_pli_redirect_path(observer_level, financial_year: financial_year, quarter: quarter), notice: notice_message
     else
       redirect_to observer_pli_detail_employee_detail_path(employee_detail, observer_level: observer_level, financial_year: financial_year, quarter: quarter, month: month), alert: review.errors.full_messages.to_sentence
@@ -1111,28 +1250,89 @@ end
 
   private
 
-  def employee_name_lookup_for_codes(codes)
-    @employee_name_lookup ||= {}
-    normalized_codes = Array(codes).filter_map { |code| code.to_s.strip.downcase.presence }.uniq
-    missing_codes = normalized_codes - @employee_name_lookup.keys
-
-    if missing_codes.any?
-      EmployeeDetail
-        .where("LOWER(TRIM(employee_code)) IN (?)", missing_codes)
-        .pluck(:employee_code, :employee_name)
-        .each do |employee_code, employee_name|
-          @employee_name_lookup[employee_code.to_s.strip.downcase] = employee_name
-        end
-    end
-
-    @employee_name_lookup
+  def load_observer_names_for_employee_list
+    @observer_names_by_code = observer_names_by_code_for(@employee_details)
   end
 
-  def employee_name_for_code(code)
-    normalized_code = code.to_s.strip.downcase
-    return nil if normalized_code.blank?
+  def observer_names_by_code_for(employee_details)
+    observer_codes = Array(employee_details).flat_map do |employee|
+      ApplicationHelper::OBSERVER_LEVELS.map { |observer_level| employee.public_send(observer_level).to_s.strip }
+    end.reject(&:blank?).map(&:downcase).uniq
 
-    employee_name_lookup_for_codes([ normalized_code ])[normalized_code]
+    return {} if observer_codes.empty?
+
+    EmployeeDetail
+      .where("LOWER(TRIM(employee_code)) IN (?)", observer_codes)
+      .pluck(:employee_code, :employee_name)
+      .each_with_object({}) do |(code, name), names_by_code|
+        names_by_code[code.to_s.strip.downcase] = name
+      end
+  end
+
+  def notify_l1_after_observer_chain_approval(employee_detail, financial_year, quarter, month)
+    return { success: true, sent: false, message: "Observer approval chain is still pending" } unless observer_chain_approved_for_month?(employee_detail, financial_year, quarter, month)
+
+    quarter_label = quarter_sms_label(quarter)
+    return { success: true, sent: false, message: "L1 SMS already sent" } if l1_sms_already_sent?(employee_detail.id, quarter_label, month)
+
+    result = send_sms_to_l1_after_observers(employee_detail, quarter_label, month)
+    mark_l1_sms_as_sent(employee_detail.id, quarter_label, month) if result[:success]
+    result.merge(sent: result[:success])
+  end
+
+  def send_sms_to_l1_after_observers(employee_detail, quarter_label, month)
+    l1_code = employee_detail.l1_code.to_s.strip
+    return { success: false, error: "L1 code not found for employee" } if l1_code.blank?
+
+    l1_manager = employee_detail_for_code(l1_code)
+    return { success: false, error: "L1 manager not found with code: #{l1_code}" } unless l1_manager
+    return { success: false, error: "L1 manager mobile number not found" } if l1_manager.mobile_number.blank?
+
+    month_text = month.present? ? " #{month_label(month)}" : ""
+    message = "Emp-Code: #{employee_detail.employee_code}, Emp-Name: #{employee_detail.employee_name} has submitted his#{month_text} #{quarter_label} Qtr KRA MIS. Please review and approve in the system. Ploughman Agro Private Limited"
+
+    SmsNotificationService.send_message(l1_manager.mobile_number, message)
+  end
+
+  def l1_sms_already_sent?(employee_detail_id, quarter, month)
+    SmsLog.exists?(
+      employee_detail_id: employee_detail_id,
+      quarter: quarter,
+      month: month,
+      recipient_role: "l1",
+      sent: true
+    )
+  end
+
+  def mark_l1_sms_as_sent(employee_detail_id, quarter, month)
+    SmsLog.create!(
+      employee_detail_id: employee_detail_id,
+      quarter: quarter,
+      month: month,
+      recipient_role: "l1",
+      sent: true,
+      sent_at: Time.current
+    )
+  rescue => e
+    Rails.logger.error "Failed to mark L1 SMS as sent: #{e.message}"
+  end
+
+  def quarter_sms_label(quarter)
+    case quarter.to_s
+    when "Q1" then "Q1 (APR-JUN)"
+    when "Q2" then "Q2 (JUL-SEP)"
+    when "Q3" then "Q3 (OCT-DEC)"
+    when "Q4" then "Q4 (JAN-MAR)"
+    else quarter.to_s
+    end
+  end
+
+  def employee_detail_for_code(employee_code)
+    code = employee_code.to_s.strip
+    return nil if code.blank?
+
+    EmployeeDetail.where("LOWER(TRIM(employee_code)) = ?", code.downcase).first ||
+      EmployeeDetail.find_by("employee_code LIKE ?", "#{code}%")
   end
 
   def prepare_employee_detail_show(financial_year: nil, month: nil, quarter: nil)
@@ -1140,6 +1340,7 @@ end
     @selected_month = normalize_month_param(month || params[:month])
     @selected_quarter = quarter.presence || params[:quarter].presence || quarter_for_month(@selected_month)
     @selected_financial_year = financial_year.presence || selected_financial_year.presence ||
+                               current_financial_year ||
                                infer_review_financial_year(@employee_detail, @selected_month, @selected_quarter)
 
     @user_details = @employee_detail.user_details
@@ -1239,18 +1440,13 @@ end
   def observer_month_remarks_for(employee_detail, financial_year, quarter, month, observer_level)
     return [] unless observer_levels_for(employee_detail).include?(observer_level)
 
-    key = [ employee_detail.id, financial_year.to_s, quarter.to_s, month.to_s, observer_level.to_s ]
-    review = if defined?(@observer_review_lookup) && @observer_review_lookup
-      @observer_review_lookup[key]
-    else
-      ObserverPliReview.find_by(
-        employee_detail: employee_detail,
-        financial_year: financial_year,
-        quarter: quarter,
-        month: month,
-        observer_level: observer_level
-      )
-    end
+    review = ObserverPliReview.find_by(
+      employee_detail: employee_detail,
+      financial_year: financial_year,
+      quarter: quarter,
+      month: month,
+      observer_level: observer_level
+    )
     review&.final_remarks.present? ? [ review.final_remarks ] : []
   end
 
@@ -1423,18 +1619,27 @@ end
     )
   end
 
+  def bulk_selected_employee_scope
+    if params[:selection_scope].to_s == "all_matching"
+      EmployeeDetail.ransack(params[:q]).result
+    else
+      employee_ids = Array(params[:employee_detail_ids]).reject(&:blank?)
+      EmployeeDetail.where(id: employee_ids)
+    end
+  end
+
   def quarterly_pli_authorized?
     current_user.hod? ||
       current_user.admin? ||
       EmployeeDetail.where(
-        "TRIM(COALESCE(l1_code, '')) = ? OR TRIM(COALESCE(l1_employer_name, '')) = ?",
-        current_user.employee_code.to_s.strip,
-        current_user.email.to_s.strip
+        "LOWER(TRIM(COALESCE(l1_code, ''))) = ? OR LOWER(TRIM(COALESCE(l1_employer_name, ''))) = ?",
+        current_user.employee_code.to_s.strip.downcase,
+        current_user.email.to_s.strip.downcase
       ).exists? ||
       EmployeeDetail.where(
-        "TRIM(COALESCE(l2_code, '')) = ? OR TRIM(COALESCE(l2_employer_name, '')) = ?",
-        current_user.employee_code.to_s.strip,
-        current_user.email.to_s.strip
+        "LOWER(TRIM(COALESCE(l2_code, ''))) = ? OR LOWER(TRIM(COALESCE(l2_employer_name, ''))) = ?",
+        current_user.employee_code.to_s.strip.downcase,
+        current_user.email.to_s.strip.downcase
       ).exists?
   end
 
@@ -1443,9 +1648,9 @@ end
     return scope if current_user.hod? || current_user.admin?
 
     scope.where(
-      "TRIM(COALESCE(l1_code, '')) = :code OR TRIM(COALESCE(l1_employer_name, '')) = :email OR TRIM(COALESCE(l2_code, '')) = :code OR TRIM(COALESCE(l2_employer_name, '')) = :email",
-      code: current_user.employee_code.to_s.strip,
-      email: current_user.email.to_s.strip
+      "LOWER(TRIM(COALESCE(l1_code, ''))) = :code OR LOWER(TRIM(COALESCE(l1_employer_name, ''))) = :email OR LOWER(TRIM(COALESCE(l2_code, ''))) = :code OR LOWER(TRIM(COALESCE(l2_employer_name, ''))) = :email",
+      code: current_user.employee_code.to_s.strip.downcase,
+      email: current_user.email.to_s.strip.downcase
     )
   end
 
@@ -1459,7 +1664,7 @@ end
     @observer_title = observer_menu_title(observer_level)
     @selected_observer_pli_quarter = params[:quarter].presence
     @selected_observer_pli_month = normalize_month_param(params[:month])
-    @selected_financial_year = selected_financial_year
+    @selected_financial_year = selected_financial_year || current_financial_year
     @quarter_options = get_all_quarters.map do |quarter|
       [ "#{quarter} (#{get_quarter_months(quarter).map { |month| month_label(month) }.join('-')})", quarter ]
     end
@@ -1478,13 +1683,10 @@ end
       employee.user_details.map(&:financial_year)
     }.compact.reject(&:blank?).uniq.sort.reverse
 
-    @selected_financial_year ||= @financial_year_options.first
-    preload_observer_review_cache(
-      employee_details,
-      financial_year: @selected_financial_year,
-      quarters: @selected_observer_pli_quarter.present? ? [ @selected_observer_pli_quarter ] : get_all_quarters,
-      months: @selected_observer_pli_month.present? ? [ @selected_observer_pli_month ] : review_months
-    )
+    @selected_financial_year ||= @financial_year_options.first || current_financial_year
+    @financial_year_options |= [ @selected_financial_year ]
+    @financial_year_options.compact!
+    @financial_year_options.sort!.reverse!
     @observer_pli_rows = build_observer_pli_rows(
       employee_details,
       observer_level: observer_level,
@@ -1589,42 +1791,7 @@ end
     end
   end
 
-  def preload_observer_review_cache(employee_details, financial_year: nil, quarters: nil, months: nil)
-    employee_ids = Array(employee_details).map(&:id).compact
-    return if employee_ids.empty?
-
-    scope = ObserverPliReview.where(employee_detail_id: employee_ids)
-    scope = scope.where(financial_year: financial_year) if financial_year.present?
-    scope = scope.where(quarter: quarters) if quarters.present?
-    scope = scope.where(month: months) if months.present?
-
-    reviews = scope.to_a
-    @observer_review_lookup = reviews.index_by do |review|
-      [
-        review.employee_detail_id,
-        review.financial_year.to_s,
-        review.quarter.to_s,
-        review.month.to_s,
-        review.observer_level.to_s
-      ]
-    end
-    @approved_observer_review_keys = reviews.each_with_object(Set.new) do |review, keys|
-      next unless review.status == "approved"
-
-      keys.add([
-        review.employee_detail_id,
-        review.financial_year.to_s,
-        review.quarter.to_s,
-        review.month.to_s,
-        review.observer_level.to_s
-      ])
-    end
-  end
-
   def observer_review_approved?(employee_detail, financial_year, quarter, month, observer_level)
-    key = [ employee_detail.id, financial_year.to_s, quarter.to_s, month.to_s, observer_level.to_s ]
-    return @approved_observer_review_keys.include?(key) if defined?(@approved_observer_review_keys) && @approved_observer_review_keys
-
     ObserverPliReview.exists?(
       employee_detail: employee_detail,
       financial_year: financial_year,
@@ -1666,13 +1833,39 @@ end
   end
 
   def filter_l1_rows_by_observer_chain(monthly_employee_data)
-    monthly_employee_data.select do |_key, data|
-      observer_chain_approved_for_month?(
-        data[:employee],
-        data[:financial_year],
-        data[:quarter_name],
-        data[:month]
+    rows = monthly_employee_data.values
+    return monthly_employee_data if rows.empty?
+
+    employee_ids = rows.map { |data| data[:employee]&.id }.compact.uniq
+    financial_years = rows.map { |data| data[:financial_year] }.compact.uniq
+    quarters = rows.map { |data| data[:quarter_name] }.compact.uniq
+    months = rows.map { |data| data[:month] }.compact.uniq
+
+    approved_observer_keys = ObserverPliReview
+      .where(
+        employee_detail_id: employee_ids,
+        financial_year: financial_years,
+        quarter: quarters,
+        month: months,
+        status: "approved"
       )
+      .pluck(:employee_detail_id, :financial_year, :quarter, :month, :observer_level)
+      .to_set
+
+    monthly_employee_data.select do |_key, data|
+      employee = data[:employee]
+      assigned_levels = observer_levels_for(employee)
+      next true if assigned_levels.empty?
+
+      assigned_levels.all? do |observer_level|
+        approved_observer_keys.include?([
+          employee.id,
+          data[:financial_year],
+          data[:quarter_name],
+          data[:month],
+          observer_level
+        ])
+      end
     end
   end
 
@@ -1715,7 +1908,12 @@ end
         payload = quarter_pli_payload_for(employee, financial_year, quarter_name)
         next unless payload
 
-        review = reviews[[ employee.id, quarter_name ]]
+        review = current_quarterly_pli_review_for(
+          reviews[[ employee.id, quarter_name ]],
+          employee,
+          financial_year,
+          quarter_name
+        )
         {
           employee: employee,
           financial_year: financial_year,
@@ -1733,6 +1931,56 @@ end
         row[:quarter]
       ]
     end
+  end
+
+  def current_quarterly_pli_review_for(review, employee_detail, financial_year, quarter)
+    return nil if review.blank?
+
+    reviewed_at = review.reviewed_at || review.updated_at || review.created_at
+    source_updated_at = quarterly_pli_source_updated_at(employee_detail, financial_year, quarter)
+
+    return review if source_updated_at.blank?
+    return review if reviewed_at.present? && reviewed_at >= source_updated_at
+
+    nil
+  end
+
+  def quarterly_pli_source_updated_at(employee_detail, financial_year, quarter)
+    quarter_months = get_quarter_months(quarter)
+    return nil if quarter_months.empty?
+
+    timestamps = []
+
+    employee_detail.user_details.each do |detail|
+      next unless detail.financial_year.to_s == financial_year.to_s && detail.activity.present?
+      next unless quarter_months.any? { |month| target_present_for_review_month?(detail, month) }
+
+      timestamps << detail.updated_at
+
+      detail.achievements.each do |achievement|
+        next unless quarter_months.include?(achievement.month.to_s.downcase)
+
+        timestamps << achievement.updated_at
+        timestamps << achievement.achievement_remark&.updated_at
+      end
+    end
+
+    timestamps.compact.max
+  end
+
+  def quarterly_pli_export_percentage(value)
+    return "-" if value.blank? || value.to_s == "-"
+
+    numeric_value = value.to_s.delete_suffix("%").to_f
+    "#{format('%.2f', numeric_value)}%"
+  end
+
+  def quarterly_pli_export_l1_remarks(row)
+    remarks = Array(row.dig(:detail_payload, :months)).flat_map do |month_payload|
+      Array(month_payload[:l1_remarks])
+    end.map { |remark| remark.to_s.strip }.reject(&:blank?).uniq
+
+    remarks.any? ? remarks.join("; ") : "-"
   end
 
   def quarter_ready_for_pli?(employee_detail, financial_year, quarter)
@@ -1864,8 +2112,7 @@ end
   end
 
   def numeric_review_value(value)
-    text = value.to_s.strip.delete(",").gsub("%", "").strip
-    text.to_f
+    value.to_s.delete(",").to_f
   end
 
   def parse_pli_percentage(value)
@@ -1901,17 +2148,22 @@ end
   end
 
   def can_act_as_l1?(employee_detail)
+    code = current_user.employee_code.to_s.strip.downcase
+    email = current_user.email.to_s.strip.downcase
+
     current_user.hod? ||
-    current_user.employee_code == employee_detail.l1_code ||
-    current_user.email == employee_detail.l1_employer_name
+    code == employee_detail.l1_code.to_s.strip.downcase ||
+    email == employee_detail.l1_employer_name.to_s.strip.downcase
   end
 
   def can_act_as_l2?(employee_detail)
     return false unless l2_reviewer_assigned?(employee_detail)
+    code = current_user.employee_code.to_s.strip.downcase
+    email = current_user.email.to_s.strip.downcase
 
     current_user.hod? ||
-    current_user.employee_code.to_s.strip == employee_detail.l2_code.to_s.strip ||
-    current_user.email.to_s.strip == employee_detail.l2_employer_name.to_s.strip
+    code == employee_detail.l2_code.to_s.strip.downcase ||
+    email == employee_detail.l2_employer_name.to_s.strip.downcase
   end
 
   def l2_reviewer_assigned?(employee_detail)
@@ -2078,10 +2330,13 @@ end
   def prepare_review_filters(employee_details)
     @month_options = review_months.map { |month| [ month_label(month), month ] }
     @selected_review_month = normalize_month_param(params[:month])
-    @selected_financial_year = selected_financial_year
+    @selected_financial_year = selected_financial_year || current_financial_year
     @financial_year_options = employee_details.flat_map { |employee|
       employee.user_details.map(&:financial_year)
     }.compact.reject(&:blank?).uniq.sort.reverse
+    @financial_year_options |= [ @selected_financial_year ]
+    @financial_year_options.compact!
+    @financial_year_options.sort!.reverse!
   end
 
   def review_user_details_for(employee_detail)
@@ -2121,7 +2376,7 @@ end
     code = employee_detail.public_send(observer_level).to_s.strip
     return nil if code.blank?
 
-    employee_name_for_code(code)
+    EmployeeDetail.find_by(employee_code: code)&.employee_name
   end
 
   def observer_activity_remarks_present?(employee_detail, month, observer_level)
@@ -2146,44 +2401,6 @@ end
       remark.public_send("#{remark_column}=", bounded_review_text(remark_text))
       remark.save!
     end
-  end
-
-  def send_l1_sms_after_observer_chain(employee_detail, financial_year, quarter, month)
-    return unless observer_chain_approved_for_month?(employee_detail, financial_year, quarter, month)
-
-    sms_key = l1_sms_log_key(quarter, month)
-    return if SmsLog.already_sent?(employee_detail.id, sms_key)
-    return if SmsLog.already_sent?(employee_detail.id, quarter)
-
-    l1_code = employee_detail.l1_code.to_s.strip
-    return if l1_code.blank?
-
-    l1_manager = EmployeeDetail.where("LOWER(TRIM(employee_code)) = ?", l1_code.downcase).first ||
-                 EmployeeDetail.where("employee_code LIKE ?", "#{l1_code}%").first
-    return if l1_manager&.mobile_number.blank?
-
-    result = SmsService.send_sms(
-      l1_manager.mobile_number,
-      SmsService.submission_message(employee_detail.employee_name, "#{quarter} #{month_label(month)}")
-    )
-    mark_sms_log(employee_detail.id, sms_key) if result[:success]
-  rescue => e
-    Rails.logger.error "L1 SMS after observer approval failed: #{e.message}"
-  end
-
-  def l1_sms_log_key(quarter, month)
-    "l1:#{month}:#{quarter}"
-  end
-
-  def mark_sms_log(employee_detail_id, key)
-    SmsLog.create!(
-      employee_detail_id: employee_detail_id,
-      quarter: key,
-      sent: true,
-      sent_at: Time.current
-    )
-  rescue ActiveRecord::RecordNotUnique
-    nil
   end
 
   def save_l1_manager_remark_without_achievement(detail, month)
@@ -2221,12 +2438,20 @@ end
                       end
 
       detail_groups.each do |group_financial_year, details_for_review|
+        achievements_by_detail_and_month = details_for_review.each_with_object({}) do |detail, lookup|
+          lookup[detail.id] = detail.achievements
+                             .select { |achievement| achievement.achievement.present? }
+                             .group_by { |achievement| achievement.month.to_s.downcase }
+        end
+
         months_to_review.each do |review_month|
           details_with_month_data = details_for_review.select do |detail|
-            submitted_review_detail_for_month?(detail, review_month)
+            target_present_for_review_month?(detail, review_month) &&
+              achievements_by_detail_and_month.dig(detail.id, review_month).present?
           end
-          month_achievements = details_with_month_data.flat_map(&:achievements).select do |achievement|
-            next false unless achievement.month == review_month && achievement.achievement.present?
+          month_achievements = details_with_month_data.flat_map do |detail|
+            achievements_by_detail_and_month.dig(detail.id, review_month) || []
+          end.select do |achievement|
 
             if approval_level == "l2"
               [ "l1_approved", "l2_approved", "l2_returned" ].include?(achievement.status)
@@ -2238,6 +2463,16 @@ end
 
           statuses = month_achievements.map { |achievement| achievement.status || "pending" }
           current_status = calculate_month_status(statuses, month_achievements, approval_level)
+          progress_values = details_with_month_data.filter_map do |detail|
+            target_number = numeric_review_value(detail.public_send(review_month))
+            next unless target_number.positive?
+
+            achievement = (achievements_by_detail_and_month.dig(detail.id, review_month) || []).find { |record| record.achievement.present? }
+            next unless achievement
+
+            truncated_percentage(numeric_review_value(achievement.achievement), target_number)
+          end
+          progress_value = average_review_percentage(progress_values)
           key = [ emp.id, review_month, group_financial_year ].join("_")
 
           monthly_employee_data[key] = {
@@ -2248,7 +2483,9 @@ end
             financial_year: group_financial_year == "No Financial Year" ? nil : group_financial_year,
             status: current_status,
             status_config: approval_level == "l2" ? get_l2_status_config(current_status) : get_status_config(current_status),
-            achievements_count: month_achievements.size
+            achievements_count: month_achievements.size,
+            progress_value: progress_value,
+            progress: format_pli_percentage(progress_value)
           }
         end
       end
@@ -2283,9 +2520,9 @@ end
     return false unless detail.respond_to?(month)
 
     target_value = normalize_import_display_value(detail.public_send(month))
-    text = target_value.to_s.strip.delete(",").gsub("%", "").strip
-    target_is_numeric = text.match?(/\A-?\d+(?:\.\d+)?\z/)
-    target_value.present? && (!target_is_numeric || text.to_f.positive?)
+    target_text = target_value.to_s.delete(",").strip
+    target_is_numeric = target_text.match?(/\A-?\d+(?:\.\d+)?\z/)
+    target_value.present? && (!target_is_numeric || target_text.to_f.positive?)
   end
 
   def calculate_month_status(statuses, achievements, approval_level = "l1")
@@ -2327,10 +2564,11 @@ end
       get_all_quarters.each do |quarter|
         quarter_months = get_quarter_months(quarter)
 
-        # Use already-loaded user_details to avoid one query per employee/quarter.
-        quarter_activities = employee.user_details.select do |detail|
-          detail.department&.department_type.to_s == employee.department.to_s
-        end
+        # FIXED: Get ALL activities for this quarter, not just those with achievements
+        quarter_activities = employee.user_details
+                                    .where(activity_id: Activity.joins(:department)
+                                                               .where(departments: { department_type: employee.department })
+                                                               .select(:id))
 
         if quarter_activities.any?
           employee_quarter_data = {
@@ -2342,7 +2580,8 @@ end
             overall_status: "pending"
           }
 
-          quarter_activities.each do |user_detail|
+          # PERFORMANCE FIX: Preload achievements to avoid N+1 queries
+          quarter_activities.includes(:achievements, :activity, :department).each do |user_detail|
             # PERFORMANCE FIX: Create a hash of achievements by month for fast lookup
             achievements_by_month = user_detail.achievements.index_by(&:month)
 

@@ -32,7 +32,7 @@ class UserDetailsController < ApplicationController
     set_financial_year_context
     scope = target_details_scope
 
-    @user_details = scope.page(params[:page]).per(100)
+    @user_details = scope.page(params[:page]).per(100).load
   end
 
   def new
@@ -229,9 +229,16 @@ class UserDetailsController < ApplicationController
     # Track which employee_details had changes to reset their quarter only
     employee_details_with_changes = Set.new
 
+    user_detail_ids = achievement_data.keys.map(&:to_s)
+    user_details_by_id = UserDetail.includes(:activity, :employee_detail)
+                                   .where(id: user_detail_ids)
+                                   .index_by { |detail| detail.id.to_s }
+    achievements_by_detail_month = Achievement.where(user_detail_id: user_detail_ids, month: editable_months)
+                                               .index_by { |achievement| [ achievement.user_detail_id.to_s, achievement.month.to_s.downcase ] }
+
     ActiveRecord::Base.transaction do
       achievement_data.each do |user_detail_id, monthly_data|
-        user_detail = UserDetail.find_by(id: user_detail_id)
+        user_detail = user_details_by_id[user_detail_id.to_s]
         next unless user_detail
 
         activity_updated = false
@@ -257,10 +264,8 @@ class UserDetailsController < ApplicationController
           end
 
           # Find or initialize achievement
-          achievement = Achievement.find_or_initialize_by(
-            user_detail: user_detail,
-            month: month
-          )
+          achievement = achievements_by_detail_month[[ user_detail.id.to_s, month.to_s.downcase ]] ||
+                        Achievement.new(user_detail: user_detail, month: month)
 
           # Store old values for comparison
           old_achievement = achievement.achievement
@@ -293,8 +298,6 @@ class UserDetailsController < ApplicationController
       # FIXED: Only set achievements to pending for employees who actually made changes
       # This ensures that only the specific employee's data gets reset to pending
       employee_details_with_changes.each do |employee_detail_id|
-        employee_detail = EmployeeDetail.find(employee_detail_id)
-
         # Get all achievements for this specific employee in the selected month/months
         employee_achievements = Achievement.joins(:user_detail)
                                         .where(user_details: { employee_detail_id: employee_detail_id, financial_year: @selected_financial_year })
@@ -304,24 +307,19 @@ class UserDetailsController < ApplicationController
         updated_count = employee_achievements.update_all(status: "pending")
 
         # Also reset approval remarks for this employee's achievements
-        employee_achievements.joins(:achievement_remark).each do |achievement|
-          achievement.achievement_remark.update(
-            l1_remarks: nil,
-            l1_percentage: nil,
-            l2_remarks: nil,
-            l2_percentage: nil
-          )
-        end
+        AchievementRemark.where(achievement_id: employee_achievements.select(:id)).update_all(
+          l1_remarks: nil,
+          l1_percentage: nil,
+          l2_remarks: nil,
+          l2_percentage: nil,
+          updated_at: Time.current
+        )
       end
     end
 
     # Handle response messages
     if errors.empty?
       if success_count > 0
-        affected_employees = employee_details_with_changes.map do |emp_id|
-          EmployeeDetail.find(emp_id).employee_name
-        end.join(", ")
-
         flash[:notice] = "✅ Updated #{success_count} records. Pending approval."
       else
         flash[:notice] = "No changes were made to the achievements."
@@ -346,17 +344,21 @@ class UserDetailsController < ApplicationController
     if current_user.role == "employee" || current_user.role == "l1_employer" || current_user.role == "l2_employer"
       employee_detail = EmployeeDetail.find_by(employee_email: current_user.email)
       @user_details = if employee_detail
-        UserDetail.includes(:department, :activity, :employee_detail, achievements: :achievement_remark)
+        UserDetail.left_joins(:department, :activity)
+                .preload(:department, :activity, :employee_detail, achievements: :achievement_remark)
                 .where(employee_detail_id: employee_detail.id)
                 .where(financial_year: @selected_financial_year)
                 .order("departments.department_type, activities.activity_name")
+                .load
       else
         UserDetail.none
       end
     elsif current_user.role == "hod"
-      @user_details = UserDetail.includes(:department, :activity, :employee_detail, achievements: :achievement_remark)
+      @user_details = UserDetail.left_joins(:department, :activity, :employee_detail)
+                              .preload(:department, :activity, :employee_detail, achievements: :achievement_remark)
                               .where(financial_year: @selected_financial_year)
                               .order("departments.department_type, employee_details.employee_name, activities.activity_name")
+                              .load
     else
       @user_details = UserDetail.none
     end
@@ -496,6 +498,7 @@ class UserDetailsController < ApplicationController
                   .where(employee_detail_id: @employee_detail.id)
                   .where(financial_year: @selected_financial_year)
                   .order("user_details.id ASC")
+                  .load
       else
         UserDetail.none
       end
@@ -504,6 +507,7 @@ class UserDetailsController < ApplicationController
       @user_details = UserDetail.includes(:department, :activity, :employee_detail, achievements: :achievement_remark)
                                 .where(financial_year: @selected_financial_year)
                                 .order("user_details.employee_detail_id ASC, user_details.id ASC")
+                                .load
       @employee_detail = nil
     end
 
@@ -524,6 +528,7 @@ class UserDetailsController < ApplicationController
                   .where(employee_detail_id: @employee_detail.id)
                   .where(financial_year: @selected_financial_year)
                   .order("user_details.id ASC")
+                  .load
       else
         UserDetail.none
       end
@@ -532,6 +537,7 @@ class UserDetailsController < ApplicationController
       @user_details = UserDetail.includes(:department, :activity, :employee_detail, achievements: :achievement_remark)
                                 .where(financial_year: @selected_financial_year)
                                 .order("user_details.employee_detail_id ASC, user_details.id ASC")
+                                .load
       @employee_detail = nil
     else
       @employee_detail = nil
@@ -569,20 +575,32 @@ class UserDetailsController < ApplicationController
       sms_results = []
       processed_employees = Set.new
       errors = []
-      preload_ids = (achievement_data.keys + target_update_data.keys).map(&:to_s).reject(&:blank?).uniq
-      user_details_by_id = UserDetail.includes(:activity, :employee_detail).where(id: preload_ids).index_by { |detail| detail.id.to_s }
 
 
       ActiveRecord::Base.transaction do
         financial_year_for_lock = normalize_financial_year(params[:financial_year]) || @selected_financial_year || current_financial_year
         selected_submission_month = params[:month].to_s.downcase
+        submitted_user_detail_ids = (achievement_data.keys + target_update_data.keys).map(&:to_s).uniq
+        submitted_months = selected_submission_month.present? ? [ selected_submission_month ] : MONTH_ATTRIBUTES.map(&:to_s)
+        user_details_by_id = UserDetail.includes(:activity, :employee_detail)
+                                       .where(id: submitted_user_detail_ids)
+                                       .index_by { |detail| detail.id.to_s }
+        achievements_by_detail_month = Achievement.where(user_detail_id: submitted_user_detail_ids, month: submitted_months)
+                                                   .index_by { |achievement| [ achievement.user_detail_id.to_s, achievement.month.to_s.downcase ] }
+        locked_month_cache = {}
+        achievement_locked = lambda do |employee_detail_id, financial_year, month|
+          key = [ employee_detail_id.to_s, financial_year.to_s, month.to_s.downcase ]
+          locked_month_cache.fetch(key) do
+            locked_month_cache[key] = achievement_locked_for_employee_month?(employee_detail_id, financial_year, month)
+          end
+        end
 
         if new_target_data.present?
           employee_detail = current_user_target_employee_detail
 
           if employee_detail.blank?
             errors << "Employee detail not found for new key result indicator."
-          elsif selected_submission_month.present? && achievement_locked_for_employee_month?(employee_detail.id, financial_year_for_lock, selected_submission_month)
+          elsif selected_submission_month.present? && achievement_locked.call(employee_detail.id, financial_year_for_lock, selected_submission_month)
             errors << "#{short_month_label(selected_submission_month)}: This month is locked after L1 approval"
           else
             financial_year = financial_year_for_lock
@@ -639,7 +657,7 @@ class UserDetailsController < ApplicationController
               new_achievements.each do |month, values|
                 next if selected_submission_month.present? && month.to_s.downcase != selected_submission_month
 
-                if achievement_locked_for_employee_month?(employee_detail.id, financial_year, month)
+                if achievement_locked.call(employee_detail.id, financial_year, month)
                   errors << "#{short_month_label(month)}: This month is locked after L1 approval"
                   next
                 end
@@ -701,9 +719,13 @@ class UserDetailsController < ApplicationController
                 if quarters_filled.any?
                   processed_employees.add(employee_detail.id)
                   quarters_filled.each do |quarter|
-                    next if check_sms_already_sent(employee_detail.id, quarter)
-
-                    sms_results.concat(send_initial_review_sms(employee_detail, quarter, selected_submission_month, user_detail))
+                    sms_result = notify_reviewers_after_submission(employee_detail, quarter, selected_submission_month, user_detail)
+                    sms_results << {
+                      quarter: quarter,
+                      employee: employee_detail.employee_name,
+                      success: sms_result[:success],
+                      message: sms_result[:success] ? sms_result[:message] || "SMS sent successfully" : sms_result[:error]
+                    }
                   end
                 end
               end
@@ -721,7 +743,7 @@ class UserDetailsController < ApplicationController
               month_key = month.to_s.downcase
               next unless MONTH_ATTRIBUTES.map(&:to_s).include?(month_key)
               next if selected_submission_month.present? && month_key != selected_submission_month
-              if achievement_locked_for_employee_month?(user_detail.employee_detail_id, user_detail.financial_year, month_key)
+              if achievement_locked.call(user_detail.employee_detail_id, user_detail.financial_year, month_key)
                 errors << "#{short_month_label(month_key)}: This month is locked after L1 approval"
                 next
               end
@@ -751,7 +773,7 @@ class UserDetailsController < ApplicationController
           monthly_data.each do |month, values|
             next if selected_submission_month.present? && month.to_s.downcase != selected_submission_month
 
-            if achievement_locked_for_employee_month?(employee_detail.id, user_detail.financial_year, month)
+            if achievement_locked.call(employee_detail.id, user_detail.financial_year, month)
               errors << "#{short_month_label(month)}: This month is locked after L1 approval"
               next
             end
@@ -782,10 +804,8 @@ class UserDetailsController < ApplicationController
               next
             end
 
-            achievement = Achievement.find_or_initialize_by(
-              user_detail: user_detail,
-              month: month
-            )
+            achievement = achievements_by_detail_month[[ user_detail.id.to_s, month.to_s.downcase ]] ||
+                          Achievement.new(user_detail: user_detail, month: month)
 
             achievement.achievement = achievement_value.present? ? normalize_numeric_value(achievement_value) : nil
             achievement.employee_remarks = employee_remarks.to_s.strip.presence
@@ -798,8 +818,6 @@ class UserDetailsController < ApplicationController
 
           # Send SMS only once per employee per quarter
           unless processed_employees.include?(employee_detail.id)
-            processed_employees.add(employee_detail.id)
-
             quarters_filled = Set.new
             monthly_data.each do |month, values|
               next if selected_submission_month.present? && month.to_s.downcase != selected_submission_month
@@ -812,11 +830,17 @@ class UserDetailsController < ApplicationController
               quarters_filled.add(quarter) if quarter.present?
             end
 
-            quarters_filled.each do |quarter|
-              sms_already_sent = check_sms_already_sent(employee_detail.id, quarter)
+            if quarters_filled.any?
+              processed_employees.add(employee_detail.id)
 
-              unless sms_already_sent
-                sms_results.concat(send_initial_review_sms(employee_detail, quarter, selected_submission_month, user_detail))
+              quarters_filled.each do |quarter|
+                sms_result = notify_reviewers_after_submission(employee_detail, quarter, selected_submission_month.presence || monthly_data.keys.find { |month| determine_quarter(month) == quarter }, user_detail)
+                sms_results << {
+                  quarter: quarter,
+                  employee: employee_detail.employee_name,
+                  success: sms_result[:success],
+                  message: sms_result[:success] ? sms_result[:message] || "SMS sent successfully" : sms_result[:error]
+                }
               end
             end
           end
@@ -838,8 +862,14 @@ class UserDetailsController < ApplicationController
       response_message += " Warnings: #{errors.first(3).join(', ')}" if errors.any?
       if sms_results.any?
         successful_sms = sms_results.select { |r| r[:success] }
+        failed_sms = sms_results.reject { |r| r[:success] }
         if successful_sms.any?
-          response_message += " 📱 SMS notifications sent for #{successful_sms.count} quarter(s)."
+          response_message += " SMS notifications sent for #{successful_sms.count} quarter(s)."
+        end
+
+        if failed_sms.any?
+          failure_messages = failed_sms.filter_map { |result| result[:message].presence }.uniq.first(3)
+          response_message += " SMS not sent: #{failure_messages.join(', ')}." if failure_messages.any?
         end
       end
 
@@ -900,37 +930,61 @@ class UserDetailsController < ApplicationController
     employee_detail_id = params[:employee_detail_id]
     financial_year = normalize_financial_year(params[:financial_year]) || current_financial_year
     user_details_params = params[:user_details]
-    redirect_path = new_user_detail_path(
+    redirect_params = {
       department_id: department_id,
       employee_detail_id: employee_detail_id,
       financial_year: financial_year
-    )
+    }
 
     # Enhanced validation
     if department_id.blank?
-      return bulk_create_error_response("Department ID is required", :bad_request, new_user_detail_path(financial_year: financial_year))
+      return bulk_create_error_response("Department ID is required", :bad_request, redirect_params)
     end
 
     if employee_detail_id.blank?
-      return bulk_create_error_response("Employee Detail ID is required", :bad_request, new_user_detail_path(department_id: department_id, financial_year: financial_year))
+      return bulk_create_error_response("Employee Detail ID is required", :bad_request, redirect_params)
     end
 
     if user_details_params.blank?
-      return bulk_create_error_response("No user details provided", :bad_request, redirect_path)
+      return bulk_create_error_response("No user details provided", :bad_request, redirect_params)
     end
 
     # Validate that department and employee exist
     unless Department.exists?(department_id)
-      return bulk_create_error_response("Department not found", :not_found, new_user_detail_path(financial_year: financial_year))
+      return bulk_create_error_response("Department not found", :not_found, redirect_params)
     end
 
     unless EmployeeDetail.exists?(employee_detail_id)
-      return bulk_create_error_response("Employee not found", :not_found, new_user_detail_path(department_id: department_id, financial_year: financial_year))
+      return bulk_create_error_response("Employee not found", :not_found, redirect_params)
     end
 
     created_count = 0
     updated_count = 0
     errors = []
+    month_keys = MONTH_ATTRIBUTES.map(&:to_s)
+    submitted_activity_ids = []
+    submitted_user_detail_ids = []
+    submitted_department_ids = []
+
+    user_details_params.each do |row_key, details|
+      activity_id = details["activity_id"].presence || details[:activity_id].presence || row_key.to_s.delete_prefix("activity_")
+      row_department_id = details["department_id"].presence || details[:department_id].presence || department_id
+      user_detail_id = details["user_detail_id"].presence || details[:user_detail_id].presence
+
+      submitted_activity_ids << activity_id.to_s if activity_id.present?
+      submitted_department_ids << row_department_id.to_s if row_department_id.present?
+      submitted_user_detail_ids << user_detail_id.to_s if user_detail_id.present?
+    end
+
+    activities_by_id = Activity.where(id: submitted_activity_ids.uniq).index_by { |activity| activity.id.to_s }
+    user_details_by_id = UserDetail.where(id: submitted_user_detail_ids.uniq, employee_detail_id: employee_detail_id, financial_year: financial_year)
+                                   .index_by { |detail| detail.id.to_s }
+    user_details_by_department_activity = UserDetail.where(
+      department_id: submitted_department_ids.uniq,
+      activity_id: submitted_activity_ids.uniq,
+      employee_detail_id: employee_detail_id,
+      financial_year: financial_year
+    ).index_by { |detail| [ detail.department_id.to_s, detail.activity_id.to_s ] }
 
     ActiveRecord::Base.transaction do
       user_details_params.each do |row_key, details|
@@ -939,26 +993,25 @@ class UserDetailsController < ApplicationController
           row_department_id = details["department_id"].presence || details[:department_id].presence || department_id
           user_detail_id = details["user_detail_id"].presence || details[:user_detail_id].presence
 
-          unless Activity.exists?(activity_id)
+          activity = activities_by_id[activity_id.to_s]
+          unless activity
             errors << "Activity with ID #{activity_id} not found"
             next
           end
 
           # Extract monthly data
-          month_data = {
-            april: extract_month_value(details, "april"),
-            may: extract_month_value(details, "may"),
-            june: extract_month_value(details, "june"),
-            july: extract_month_value(details, "july"),
-            august: extract_month_value(details, "august"),
-            september: extract_month_value(details, "september"),
-            october: extract_month_value(details, "october"),
-            november: extract_month_value(details, "november"),
-            december: extract_month_value(details, "december"),
-            january: extract_month_value(details, "january"),
-            february: extract_month_value(details, "february"),
-            march: extract_month_value(details, "march")
-          }
+          month_data = {}
+          invalid_month = false
+          month_keys.each do |month|
+            month_value = extract_month_value(details, month)
+            if month_value.present? && !valid_numeric_percent_value?(month_value)
+              errors << "Invalid #{month.upcase} value for #{details['activity_name'] || details[:activity_name] || "activity #{activity_id}"}: only numbers, optional decimal, and optional % are allowed"
+              invalid_month = true
+            else
+              month_data[month.to_sym] = month_value
+            end
+          end
+          next if invalid_month
 
           # Extract activity metadata (unit and theme_name)
           # Handle blank values properly - convert empty strings to nil for database
@@ -967,15 +1020,18 @@ class UserDetailsController < ApplicationController
           annual_target_present = details.key?("annual_target_fy") || details.key?(:annual_target_fy) ||
                                   details.key?("annual_target_fy_2026_27") || details.key?(:annual_target_fy_2026_27)
           annual_target_value = details["annual_target_fy"] || details[:annual_target_fy] || details["annual_target_fy_2026_27"] || details[:annual_target_fy_2026_27]
+          if annual_target_value.present? && !valid_numeric_percent_value?(annual_target_value)
+            errors << "Invalid annual target for #{details['activity_name'] || details[:activity_name] || "activity #{activity_id}"}: only numbers, optional decimal, and optional % are allowed"
+            next
+          end
 
           activity_metadata = {
             unit: unit_value.present? ? unit_value : nil,
             theme_name: theme_value.present? ? theme_value : nil
           }
-          activity_metadata[:annual_target_fy] = annual_target_value.present? ? annual_target_value : nil if annual_target_present
+          activity_metadata[:annual_target_fy] = annual_target_value.present? ? annual_target_value.to_s.strip : nil if annual_target_present
 
           # Update Activity metadata (always update to handle clearing values)
-          activity = Activity.find(activity_id)
           activity_update_data = {}
 
           # Always include unit and theme_name in update (nil values will clear the fields)
@@ -988,14 +1044,11 @@ class UserDetailsController < ApplicationController
           end
 
           user_detail_record = if user_detail_id.present?
-            UserDetail.where(
-              id: user_detail_id,
-              employee_detail_id: employee_detail_id,
-              financial_year: financial_year
-            ).first
+            user_details_by_id[user_detail_id.to_s]
           end
 
-          user_detail_record ||= UserDetail.find_or_initialize_by(
+          user_detail_key = [ row_department_id.to_s, activity_id.to_s ]
+          user_detail_record ||= user_details_by_department_activity[user_detail_key] || UserDetail.new(
             department_id: row_department_id,
             activity_id: activity_id,
             employee_detail_id: employee_detail_id,
@@ -1015,6 +1068,8 @@ class UserDetailsController < ApplicationController
             else
               updated_count += 1
             end
+            user_details_by_id[user_detail_record.id.to_s] = user_detail_record
+            user_details_by_department_activity[user_detail_key] = user_detail_record
           else
             errors << "Failed to save activity #{activity_id}: #{user_detail_record.errors.full_messages.join(', ')}"
           end
@@ -1033,27 +1088,32 @@ class UserDetailsController < ApplicationController
       message_parts << "#{created_count} records created" if created_count > 0
       message_parts << "#{updated_count} records updated" if updated_count > 0
       message_parts = [ "No changes made" ] if message_parts.empty?
-      success_message = message_parts.join(", ")
-      success_message += ". Warnings: #{errors.join('; ')}" if errors.present?
-
-      response_data = {
-        success: true,
-        message: success_message,
-        created: created_count,
-        updated: updated_count
-      }
-      response_data[:warnings] = errors if errors.present?
+      message = message_parts.join(", ")
+      message = "#{message}. Warnings: #{errors.first(3).join('; ')}" if errors.present?
 
       respond_to do |format|
-        format.html { redirect_to redirect_path, notice: success_message }
-        format.json { render json: response_data }
-        format.any { redirect_to redirect_path, notice: success_message }
+        format.html do
+          redirect_to new_user_detail_path(redirect_params), notice: "Data saved successfully. #{message}."
+        end
+        format.json do
+          response_data = {
+            success: true,
+            message: message,
+            created: created_count,
+            updated: updated_count
+          }
+          response_data[:warnings] = errors if errors.present?
+          render json: response_data
+        end
       end
     else
-      error_message = "Failed to save records: #{errors.join('; ')}"
+      error_message = "Failed to save records: #{errors.first(3).join('; ')}"
+
       respond_to do |format|
-        format.html { redirect_to redirect_path, alert: error_message }
-        format.json {
+        format.html do
+          redirect_to new_user_detail_path(redirect_params), alert: error_message
+        end
+        format.json do
           render json: {
             success: false,
             error: "Failed to save records",
@@ -1061,8 +1121,7 @@ class UserDetailsController < ApplicationController
             created: created_count,
             updated: updated_count
           }, status: :unprocessable_entity
-        }
-        format.any { redirect_to redirect_path, alert: error_message }
+        end
       end
     end
   end
@@ -1101,6 +1160,10 @@ class UserDetailsController < ApplicationController
       import_sheets.each do |sheet_info|
         spreadsheet = sheet_info[:spreadsheet]
         sheet_name = sheet_info[:name]
+        if spreadsheet.respond_to?(:default_sheet=) && spreadsheet.respond_to?(:sheets) && spreadsheet.sheets.include?(sheet_name)
+          spreadsheet.default_sheet = sheet_name
+        end
+
         header = import_spreadsheet_row(spreadsheet, 1)
         next if spreadsheet.last_row.to_i < 2
 
@@ -1115,8 +1178,8 @@ class UserDetailsController < ApplicationController
             row = {}
             header.each_with_index do |col_name, index|
               next if col_name.nil?
-              key = normalize_user_detail_import_header(col_name)
-              row[key] = row_data[index] if key.present?
+              key = col_name.to_s.strip.downcase.gsub(/\s+/, "_")
+              row[key] = row_data[index]
             end
 
 
@@ -1124,7 +1187,7 @@ class UserDetailsController < ApplicationController
             employee_name = row["employee_name"]
             employee_email = row["employee_email"]
             employee_code = row["employee_code"]
-            post = row["post"] || row["designation"] || row["role"]
+            post = row["post"] || row["designation"]
             location = row["location"] || row["posting_location"] || row["work_location"]
 
             mobile_number = extract_employee_mobile_number(row)
@@ -1133,10 +1196,10 @@ class UserDetailsController < ApplicationController
             l1_employer_name = row["l1_employer_name"] || row["l1_employee_name"]
             l2_code = row["l2_code"] || row["l2_employer_code"]
             l2_employer_name = row["l2_employer_name"]
-            obs_code1 = row["obs_code_1"] || row["obs_code1"] || row["observer_code_1"] || row["observer1_code"] || row["observer_1_code"] || row["bw_code_1"] || row["bw_code1"] || row["org_code_1"] || row["org_code1"]
-            obs_code2 = row["obs_code_2"] || row["obs_code2"] || row["observer_code_2"] || row["observer2_code"] || row["observer_2_code"] || row["bw_code_2"] || row["bw_code2"] || row["org_code_2"] || row["org_code2"]
-            obs_code3 = row["obs_code_3"] || row["obs_code3"] || row["observer_code_3"] || row["observer3_code"] || row["observer_3_code"] || row["bw_code_3"] || row["bw_code3"] || row["org_code_3"] || row["org_code3"]
-            obs_code4 = row["obs_code_4"] || row["obs_code4"] || row["observer_code_4"] || row["observer4_code"] || row["observer_4_code"] || row["bw_code_4"] || row["bw_code4"] || row["org_code_4"] || row["org_code4"]
+            obs_code1 = row["obs_code_1"] || row["obs_code1"] || row["observer_code_1"] || row["observer1_code"] || row["observer_1_code"] || row["bw_code_1"] || row["bw_code1"]
+            obs_code2 = row["obs_code_2"] || row["obs_code2"] || row["observer_code_2"] || row["observer2_code"] || row["observer_2_code"] || row["bw_code_2"] || row["bw_code2"]
+            obs_code3 = row["obs_code_3"] || row["obs_code3"] || row["observer_code_3"] || row["observer3_code"] || row["observer_3_code"] || row["bw_code_3"] || row["bw_code3"]
+            obs_code4 = row["obs_code_4"] || row["obs_code4"] || row["observer_code_4"] || row["observer4_code"] || row["observer_4_code"] || row["bw_code_4"] || row["bw_code4"]
             manager_values = normalize_import_manager_values(l1_code, l1_employer_name, l2_code, l2_employer_name)
             l1_code = manager_values[:l1_code]
             l1_employer_name = manager_values[:l1_employer_name]
@@ -1155,20 +1218,13 @@ class UserDetailsController < ApplicationController
 
 
 
-            months = {
-              april: normalize_percentage(row["april"] || row["apr"]),
-              may: normalize_percentage(row["may"]),
-              june: normalize_percentage(row["june"] || row["jun"]),
-              july: normalize_percentage(row["july"] || row["jul"]),
-              august: normalize_percentage(row["august"] || row["aug"]),
-              september: normalize_percentage(row["september"] || row["sep"] || row["sept"]),
-              october: normalize_percentage(row["october"] || row["oct"]),
-              november: normalize_percentage(row["november"] || row["nov"]),
-              december: normalize_percentage(row["december"] || row["dec"]),
-              january: normalize_percentage(row["january"] || row["jan"]),
-              february: normalize_percentage(row["february"] || row["feb"]),
-              march: normalize_percentage(row["march"] || row["mar"])
-            }
+            percent_context = unit.to_s.strip == "%"
+            months = MONTH_ATTRIBUTES.index_with do |month|
+              normalize_import_display_value(
+                import_row_month_value(row, month),
+                percent_context: percent_context
+              )
+            end
 
 
 
@@ -1376,7 +1432,7 @@ class UserDetailsController < ApplicationController
       shared_strings = read_xlsx_shared_strings(zip_file)
       percentage_styles = read_xlsx_percentage_styles(zip_file)
 
-      zip_file.glob("xl/worksheets/sheet*.xml").sort_by(&:name).each_with_index do |worksheet_entry, index|
+      zip_file.glob("xl/worksheets/sheet*.xml").sort_by { |entry| entry.name[/sheet(\d+)\.xml/, 1].to_i }.each_with_index do |worksheet_entry, index|
         worksheet = Nokogiri::XML(worksheet_entry.get_input_stream.read)
         rows = worksheet.xpath("//*[local-name()='sheetData']/*[local-name()='row']").map do |row_node|
           cells = []
@@ -1601,40 +1657,6 @@ class UserDetailsController < ApplicationController
     nil
   end
 
-  def normalize_user_detail_import_header(value)
-    key = value.to_s.strip.downcase.gsub(/[^a-z0-9]+/, "_").gsub(/\A_+|_+\z/, "")
-    {
-      "apr" => "april",
-      "jun" => "june",
-      "jul" => "july",
-      "aug" => "august",
-      "sep" => "september",
-      "sept" => "september",
-      "oct" => "october",
-      "nov" => "november",
-      "dec" => "december",
-      "jan" => "january",
-      "feb" => "february",
-      "mar" => "march",
-      "mobile_no" => "mobile_number",
-      "mobile" => "mobile_number",
-      "unit_of_measure" => "unit_of_measurement",
-      "key_result_indicators" => "key_result_indicator",
-      "org_code1" => "org_code_1",
-      "org_code2" => "org_code_2",
-      "org_code3" => "org_code_3",
-      "org_code4" => "org_code_4",
-      "obs_code1" => "obs_code_1",
-      "obs_code2" => "obs_code_2",
-      "obs_code3" => "obs_code_3",
-      "obs_code4" => "obs_code_4",
-      "bw_code1" => "bw_code_1",
-      "bw_code2" => "bw_code_2",
-      "bw_code3" => "bw_code_3",
-      "bw_code4" => "bw_code_4"
-    }[key] || key
-  end
-
   def normalize_import_financial_year(value)
     normalized = normalize_financial_year(value)
     return normalized if normalized.to_s.match?(/\A\d{4}-\d{4}\z/)
@@ -1744,7 +1766,7 @@ class UserDetailsController < ApplicationController
   end
 
   def set_user_detail
-    @user_detail = UserDetail.find(params[:id])
+    @user_detail = UserDetail.includes(:department, :activity, :employee_detail).find(params[:id])
   end
 
   def user_detail_params
@@ -1758,11 +1780,14 @@ class UserDetailsController < ApplicationController
     params.permit(:department_id, :employee_detail_id, :financial_year, user_details: {})
   end
 
-  def bulk_create_error_response(message, status, redirect_path)
+  def bulk_create_error_response(message, status, redirect_params = {})
     respond_to do |format|
-      format.html { redirect_to redirect_path, alert: message }
-      format.json { render json: { error: message }, status: status }
-      format.any { redirect_to redirect_path, alert: message }
+      format.html do
+        redirect_to new_user_detail_path(redirect_params.compact), alert: message
+      end
+      format.json do
+        render json: { error: message }, status: status
+      end
     end
   end
 
@@ -1895,12 +1920,41 @@ class UserDetailsController < ApplicationController
 
     return nil if value.blank?
     return nil if spreadsheet_error_value?(value)
-    return value.to_f if value.is_a?(String) && value.match?(/^\d+\.?\d*$/)
-    value
+
+    value.to_s.strip
+  end
+
+  def valid_numeric_percent_value?(value)
+    value.to_s.strip.match?(/\A-?\d+(?:\.\d+)?%?\z/)
   end
 
   def normalize_percentage(value)
     normalize_import_display_value(value)
+  end
+
+  # Excel export uses APR/JUN/…; import must also accept full names (april/june/…).
+  MONTH_HEADER_ALIASES = {
+    "april" => %w[april apr],
+    "may" => %w[may],
+    "june" => %w[june jun],
+    "july" => %w[july jul],
+    "august" => %w[august aug],
+    "september" => %w[september sep sept],
+    "october" => %w[october oct],
+    "november" => %w[november nov],
+    "december" => %w[december dec],
+    "january" => %w[january jan],
+    "february" => %w[february feb],
+    "march" => %w[march mar]
+  }.freeze
+
+  def import_row_month_value(row, month)
+    aliases = MONTH_HEADER_ALIASES[month.to_s] || [ month.to_s ]
+    aliases.each do |key|
+      value = row[key]
+      return value unless value.nil? || (value.respond_to?(:blank?) && value.blank?)
+    end
+    nil
   end
 
   def valid_numeric_value?(value)
@@ -1943,7 +1997,7 @@ class UserDetailsController < ApplicationController
   end
 
   # SMS functionality for quarterly notifications
-  def send_sms_to_l1(employee_detail, quarter, _user_detail = nil)
+  def send_sms_to_l1(employee_detail, quarter, user_detail)
     begin
       # Get L1 manager's mobile number (not the employee's mobile number)
       l1_code = employee_detail.l1_code
@@ -1956,19 +2010,10 @@ class UserDetailsController < ApplicationController
       l1_mobile = l1_manager.mobile_number
       return { success: false, error: "L1 manager mobile number not found" } unless l1_mobile.present?
 
-      message = SmsService.submission_message(employee_detail.employee_name, quarter)
-      result = SmsService.send_sms(l1_mobile, message)
+      message = "Emp-Code: #{employee_detail.employee_code}, Emp-Name: #{employee_detail.employee_name} has submitted his #{quarter} Qtr KRA MIS. Please review and approve in the system. Ploughman Agro Private Limited"
 
-      if result[:success]
-        {
-          success: true,
-          message: result[:message],
-          message_id: result[:message_id],
-          response: result[:response]
-        }
-      else
-        { success: false, error: result[:message] }
-      end
+      SmsNotificationService.send_message(l1_mobile, message)
+
     rescue => e
       Rails.logger.error "SMS service error: #{e.message}"
       Rails.logger.error "Backtrace: #{e.backtrace.first(5).join("\n")}"
@@ -1976,68 +2021,17 @@ class UserDetailsController < ApplicationController
     end
   end
 
-  def send_initial_review_sms(employee_detail, quarter, month, user_detail = nil)
+  def notify_reviewers_after_submission(employee_detail, quarter, month, user_detail)
     observer_levels = observer_levels_for_employee(employee_detail)
-
     if observer_levels.any?
       send_sms_to_observers(employee_detail, quarter, month, observer_levels)
     else
-      return [] if check_sms_already_sent(employee_detail.id, quarter)
+      return { success: true, message: "L1 SMS already sent" } if check_sms_already_sent(employee_detail.id, quarter, month)
 
-      sms_result = send_sms_to_l1(employee_detail, quarter, user_detail)
-      mark_sms_as_sent(employee_detail.id, quarter) if sms_result[:success]
-      [ {
-        quarter: quarter,
-        month: month,
-        recipient: "L1",
-        employee: employee_detail.employee_name,
-        success: sms_result[:success],
-        message: sms_result[:success] ? "SMS sent successfully" : sms_result[:error]
-      } ]
+      result = send_sms_to_l1(employee_detail, quarter, user_detail)
+      mark_sms_as_sent(employee_detail.id, quarter, month) if result[:success]
+      result
     end
-  end
-
-  def send_sms_to_observers(employee_detail, quarter, month, observer_levels)
-    observer_codes = observer_levels.index_with { |level| employee_detail.public_send(level).to_s.strip }
-    observers_by_code = EmployeeDetail
-      .where("LOWER(TRIM(employee_code)) IN (?)", observer_codes.values.map(&:downcase))
-      .index_by { |observer| observer.employee_code.to_s.strip.downcase }
-
-    observer_levels.map do |observer_level|
-      observer_code = observer_codes[observer_level]
-      sms_key = observer_sms_log_key(observer_level, quarter, month)
-
-      if SmsLog.already_sent?(employee_detail.id, sms_key)
-        next {
-          quarter: quarter,
-          month: month,
-          recipient: observer_level,
-          employee: employee_detail.employee_name,
-          success: true,
-          message: "SMS already sent"
-        }
-      end
-
-      observer = observers_by_code[observer_code.downcase]
-      result = if observer&.mobile_number.present?
-        SmsService.send_sms(
-          observer.mobile_number,
-          SmsService.observer_submission_message(employee_detail.employee_name, quarter, month_label_for_sms(month), observer_level)
-        )
-      else
-        { success: false, message: "Observer mobile number not found for #{observer_code}" }
-      end
-
-      mark_sms_as_sent(employee_detail.id, sms_key) if result[:success]
-      {
-        quarter: quarter,
-        month: month,
-        recipient: observer_level,
-        employee: employee_detail.employee_name,
-        success: result[:success],
-        message: result[:success] ? "SMS sent successfully" : result[:message]
-      }
-    end.compact
   end
 
   def observer_levels_for_employee(employee_detail)
@@ -2046,12 +2040,89 @@ class UserDetailsController < ApplicationController
     end
   end
 
-  def observer_sms_log_key(observer_level, quarter, month)
-    "observer:#{observer_level}:#{month.presence || 'all'}:#{quarter}"
+  def send_sms_to_observers(employee_detail, quarter, month, observer_levels)
+    results = observer_levels.map do |observer_level|
+      send_sms_to_observer(employee_detail, quarter, month, observer_level)
+    end
+    sent_count = results.count { |result| result[:success] && !result[:already_sent] }
+    already_sent_count = results.count { |result| result[:success] && result[:already_sent] }
+    failed_results = results.reject { |result| result[:success] }
+
+    if sent_count.positive? || already_sent_count.positive?
+      message_parts = []
+      message_parts << "Observer SMS sent to #{sent_count} reviewer(s)" if sent_count.positive?
+      message_parts << "Observer SMS already sent to #{already_sent_count} reviewer(s)" if already_sent_count.positive?
+
+      {
+        success: true,
+        message: message_parts.join(", "),
+        observer_results: results
+      }
+    else
+      {
+        success: false,
+        error: failed_results.map { |result| result[:error] }.compact.first || "Observer SMS could not be sent",
+        observer_results: results
+      }
+    end
   end
 
-  def month_label_for_sms(month)
-    month.present? ? short_month_label(month) : nil
+  def send_sms_to_observer(employee_detail, quarter, month, observer_level)
+    observer_code = employee_detail.public_send(observer_level).to_s.strip
+    return { success: false, error: "#{observer_level} code not found" } if observer_code.blank?
+    if observer_sms_already_sent?(employee_detail.id, quarter, month, observer_level)
+      return {
+        success: true,
+        already_sent: true,
+        message: "#{observer_label(observer_level)} SMS already sent",
+        observer_level: observer_level,
+        observer_code: observer_code
+      }
+    end
+
+    observer = employee_detail_for_code(observer_code)
+    unless observer
+      error = "#{observer_label(observer_level)} not found with code: #{observer_code}"
+      Rails.logger.warn "Observer SMS skipped: #{error} for employee_detail_id=#{employee_detail.id}"
+      return { success: false, error: error, observer_level: observer_level, observer_code: observer_code }
+    end
+
+    if observer.mobile_number.blank?
+      error = "#{observer_label(observer_level)} mobile number not found for code: #{observer_code}"
+      Rails.logger.warn "Observer SMS skipped: #{error} for employee_detail_id=#{employee_detail.id}"
+      return { success: false, error: error, observer_level: observer_level, observer_code: observer_code, observer_name: observer.employee_name }
+    end
+
+    month_text = month.present? ? " #{short_month_label(month)}" : ""
+    message = "Emp-Code: #{employee_detail.employee_code}, Emp-Name: #{employee_detail.employee_name} has submitted his#{month_text} #{quarter} Qtr KRA MIS. Please review and approve in the system. Ploughman Agro Private Limited"
+    result = SmsNotificationService.send_message(observer.mobile_number, message)
+
+    if result[:success]
+      mark_sms_as_sent(
+        employee_detail.id,
+        quarter,
+        month,
+        recipient_role: "observer",
+        recipient_employee_detail_id: observer.id,
+        observer_level: observer_level
+      )
+    else
+      Rails.logger.warn "Observer SMS failed for employee_detail_id=#{employee_detail.id}, #{observer_level}=#{observer_code}: #{result[:error]}"
+    end
+
+    result.merge(observer_level: observer_level, observer_code: observer_code, observer_name: observer.employee_name)
+  end
+
+  def observer_label(observer_level)
+    "OB#{observer_level.to_s.gsub(/\D/, '')}"
+  end
+
+  def employee_detail_for_code(employee_code)
+    code = employee_code.to_s.strip
+    return nil if code.blank?
+
+    EmployeeDetail.where("LOWER(TRIM(employee_code)) = ?", code.downcase).first ||
+      EmployeeDetail.find_by("employee_code LIKE ?", "#{code}%")
   end
 
   def determine_quarter(month)
@@ -2118,10 +2189,12 @@ class UserDetailsController < ApplicationController
   def manual_kri_count_for_month(employee_detail_id, financial_year, month)
     month_key = month.to_s.downcase
     return 0 if employee_detail_id.blank? || financial_year.blank? || month_key.blank?
+    return 0 unless MONTH_ATTRIBUTES.map(&:to_s).include?(month_key)
 
     UserDetail.joins(:activity)
               .where(employee_detail_id: employee_detail_id, financial_year: financial_year)
               .where(activities: { theme_name: MANUAL_KRI_THEME })
+              .select(:id, month_key)
               .count { |user_detail| manual_kri_has_target_for_month?(user_detail, month_key) }
   end
 
@@ -2152,11 +2225,9 @@ class UserDetailsController < ApplicationController
   end
 
   def department_for_new_target(employee_detail, financial_year)
-    existing_department = UserDetail.includes(:department)
-                                    .where(employee_detail_id: employee_detail.id, financial_year: financial_year)
-                                    .order(:id)
-                                    .map(&:department)
-                                    .compact
+    existing_department = Department.joins(:user_details)
+                                    .where(user_details: { employee_detail_id: employee_detail.id, financial_year: financial_year })
+                                    .order("user_details.id ASC")
                                     .first
 
     department_type = existing_department&.department_type.presence || employee_detail.department.presence || "General"
@@ -2182,18 +2253,33 @@ class UserDetailsController < ApplicationController
     render :view_sms_logs
   end
 
-  def check_sms_already_sent(employee_detail_id, quarter)
+  def check_sms_already_sent(employee_detail_id, quarter, month = nil)
     # Check if SMS was already sent for this quarter using database
     # Use employee_detail_id to track per employee, not per activity
-    SmsLog.exists?(employee_detail_id: employee_detail_id, quarter: quarter, sent: true)
+    SmsLog.exists?(employee_detail_id: employee_detail_id, quarter: quarter, month: month, recipient_role: "l1", sent: true)
   end
 
-  def mark_sms_as_sent(employee_detail_id, quarter)
+  def observer_sms_already_sent?(employee_detail_id, quarter, month, observer_level)
+    SmsLog.exists?(
+      employee_detail_id: employee_detail_id,
+      quarter: quarter,
+      month: month,
+      recipient_role: "observer",
+      observer_level: observer_level,
+      sent: true
+    )
+  end
+
+  def mark_sms_as_sent(employee_detail_id, quarter, month = nil, recipient_role: "l1", recipient_employee_detail_id: nil, observer_level: nil)
     # Mark SMS as sent in database to prevent duplicates
     # Use employee_detail_id to track per employee, not per activity
     SmsLog.create!(
       employee_detail_id: employee_detail_id,
       quarter: quarter,
+      month: month,
+      recipient_role: recipient_role,
+      recipient_employee_detail_id: recipient_employee_detail_id,
+      observer_level: observer_level,
       sent: true,
       sent_at: Time.current
     )

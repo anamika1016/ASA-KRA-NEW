@@ -244,7 +244,7 @@ class HomeController < ApplicationController
         pulse_remarks: assessment_params[:pulse_remarks].presence,
         remarks: assessment_params[:remarks].presence, professionalism_conduct: assessment_params[:professionalism_conduct].presence,
         work_quality_accuracy: assessment_params[:work_quality_accuracy].presence, initiative_problem_solving: assessment_params[:initiative_problem_solving].presence,
-        asa_values_culture: nil, collaboration: nil,
+        papl_values_culture: nil, collaboration: nil,
         time_management_reliability: assessment_params[:time_management_reliability].presence, growth_mindset_development: assessment_params[:growth_mindset_development].presence
       )
       manager_feedback = manager_feedback_summary_for(assessment)

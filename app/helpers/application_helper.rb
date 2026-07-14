@@ -155,8 +155,9 @@ module ApplicationHelper
     return false if code.blank?
 
     EmployeeDetail.where(
-      "LOWER(TRIM(COALESCE(#{observer_level}, ''))) = ?",
-      code.downcase
+      "LOWER(TRIM(COALESCE(#{observer_level}, ''))) = :code OR LOWER(TRIM(COALESCE(#{observer_level}, ''))) LIKE :code_prefix",
+      code: code.downcase,
+      code_prefix: "#{code.downcase}%"
     ).exists?
   end
 
@@ -195,9 +196,6 @@ module ApplicationHelper
     code = employee_detail.public_send(observer_level).to_s.strip
     return nil if code.blank?
 
-    cached_name = @employee_name_by_code&.[](code.downcase)
-    return cached_name if cached_name.present?
-
     EmployeeDetail.where("LOWER(employee_code) = ?", code.downcase).pick(:employee_name)
   end
 
@@ -214,6 +212,39 @@ module ApplicationHelper
     observer_pending_reviews_count(observer_level).positive?
   end
 
+  def quarterly_pli_pending_reviews?
+    quarterly_pli_pending_reviews_count.positive?
+  end
+
+  def quarterly_pli_pending_reviews_count
+    return 0 unless current_user&.hod? || current_user&.admin? || l1_or_l2_reviewer_for_any_employee?
+
+    employees = quarterly_pli_employees_for_pending_count
+    return 0 if employees.empty?
+
+    employee_ids = employees.map(&:id)
+    approved_keys = QuarterlyPliReview
+      .where(employee_detail_id: employee_ids, financial_year: sidebar_current_financial_year, status: "approved")
+      .pluck(:employee_detail_id, :financial_year, :quarter)
+
+    pending_keys = []
+    employees.each do |employee|
+      details = employee.user_details.select { |detail| detail.financial_year.to_s == sidebar_current_financial_year && detail.activity.present? }
+      next if details.empty?
+
+      %w[Q1 Q2 Q3 Q4].each do |quarter|
+        next unless quarter_ready_for_sidebar_pli?(employee, details, quarter)
+
+        key = [ employee.id, sidebar_current_financial_year, quarter ]
+        pending_keys << key unless approved_keys.include?(key)
+      end
+    end
+
+    pending_keys.uniq.size
+  rescue StandardError
+    0
+  end
+
   def observer_pending_reviews_count(observer_level)
     return 0 unless observer_level_assigned_to_user?(observer_level, current_user)
 
@@ -222,32 +253,104 @@ module ApplicationHelper
 
     employee_ids = employees.map(&:id)
     approved_keys = ObserverPliReview
-      .where(employee_detail_id: employee_ids, observer_level: observer_level, status: "approved")
+      .where(employee_detail_id: employee_ids, observer_level: observer_level, financial_year: sidebar_current_financial_year, status: "approved")
       .pluck(:employee_detail_id, :financial_year, :quarter, :month)
       .to_set
 
     pending_keys = Set.new
     employees.each do |employee|
-      financial_years = employee.user_details.map(&:financial_year).compact.uniq
-      financial_years.each do |financial_year|
-        details = employee.user_details.select { |detail| detail.financial_year == financial_year }
-        details.flat_map(&:achievements).each do |achievement|
-          next if achievement.achievement.blank?
+      financial_year = sidebar_current_financial_year
+      details = employee.user_details.select { |detail| detail.financial_year.to_s == financial_year }
+      details.flat_map(&:achievements).each do |achievement|
+        next if achievement.achievement.blank?
 
-          month = achievement.month.to_s.downcase
-          quarter = quarter_name_for_month(month)
-          next if quarter.blank?
-          next unless observer_month_ready_for_review?(employee, observer_level, details, month)
+        month = achievement.month.to_s.downcase
+        quarter = quarter_name_for_month(month)
+        next if quarter.blank?
+        next unless observer_month_ready_for_review?(employee, observer_level, details, month)
 
-          key = [ employee.id, financial_year, quarter, month ]
-          pending_keys.add(key) unless approved_keys.include?(key)
-        end
+        key = [ employee.id, financial_year, quarter, month ]
+        pending_keys.add(key) unless approved_keys.include?(key)
       end
     end
 
     pending_keys.size
   rescue StandardError
     0
+  end
+
+  def sidebar_current_financial_year
+    start_year = Date.current.month >= 4 ? Date.current.year : Date.current.year - 1
+    "#{start_year}-#{start_year + 1}"
+  end
+
+  def l1_or_l2_reviewer_for_any_employee?
+    code = current_user&.employee_code.to_s.strip.downcase
+    email = current_user&.email.to_s.strip.downcase
+    return false if code.blank? && email.blank?
+
+    EmployeeDetail.where(
+      "(:code != '' AND (LOWER(TRIM(COALESCE(l1_code, ''))) = :code OR LOWER(TRIM(COALESCE(l2_code, ''))) = :code)) OR (:email != '' AND (LOWER(TRIM(COALESCE(l1_employer_name, ''))) = :email OR LOWER(TRIM(COALESCE(l2_employer_name, ''))) = :email))",
+      code: code,
+      email: email
+    ).exists?
+  end
+
+  def quarterly_pli_employees_for_pending_count
+    scope = EmployeeDetail.includes(user_details: [ :activity, achievements: :achievement_remark ])
+    return scope.to_a if current_user.admin? || current_user.hod?
+
+    code = current_user&.employee_code.to_s.strip.downcase
+    email = current_user&.email.to_s.strip.downcase
+    return [] if code.blank? && email.blank?
+
+    scope.where(
+      "(:code != '' AND (LOWER(TRIM(COALESCE(l1_code, ''))) = :code OR LOWER(TRIM(COALESCE(l2_code, ''))) = :code)) OR (:email != '' AND (LOWER(TRIM(COALESCE(l1_employer_name, ''))) = :email OR LOWER(TRIM(COALESCE(l2_employer_name, ''))) = :email))",
+      code: code,
+      email: email
+    ).to_a
+  end
+
+  def quarter_ready_for_sidebar_pli?(employee, details, quarter)
+    months = sidebar_quarter_months(quarter)
+    reviewable_months = months.select { |month| submitted_target_achievements_for_month(details, month).any? }
+    return false if reviewable_months.empty?
+
+    reviewable_months.all? do |month|
+      sidebar_observer_chain_approved?(employee, sidebar_current_financial_year, quarter, month) &&
+        submitted_target_achievements_for_month(details, month).all? { |achievement| sidebar_l1_approved_for_pli?(achievement) }
+    end
+  end
+
+  def sidebar_l1_approved_for_pli?(achievement)
+    %w[l1_approved l2_approved].include?(achievement.status.to_s) ||
+      achievement.achievement_remark&.l1_percentage.present? ||
+      achievement.achievement_remark&.l1_remarks.present?
+  end
+
+  def sidebar_observer_chain_approved?(employee, financial_year, quarter, month)
+    assigned_levels = OBSERVER_LEVELS.select { |observer_level| observer_assigned?(employee, observer_level) }
+    return true if assigned_levels.empty?
+
+    assigned_levels.all? do |observer_level|
+      ObserverPliReview.exists?(
+        employee_detail: employee,
+        financial_year: financial_year,
+        quarter: quarter,
+        month: month,
+        observer_level: observer_level,
+        status: "approved"
+      )
+    end
+  end
+
+  def sidebar_quarter_months(quarter)
+    {
+      "Q1" => %w[april may june],
+      "Q2" => %w[july august september],
+      "Q3" => %w[october november december],
+      "Q4" => %w[january february march]
+    }[quarter.to_s] || []
   end
 
   def observer_employees_for_pending_count(observer_level)
@@ -261,8 +364,9 @@ module ApplicationHelper
       return [] if code.blank?
 
       scope.where(
-        "LOWER(TRIM(COALESCE(#{observer_level}, ''))) = ?",
-        code.downcase
+        "LOWER(TRIM(COALESCE(#{observer_level}, ''))) = :code OR LOWER(TRIM(COALESCE(#{observer_level}, ''))) LIKE :code_prefix",
+        code: code.downcase,
+        code_prefix: "#{code.downcase}%"
       ).includes(user_details: :achievements).to_a
     end
   end
@@ -294,30 +398,5 @@ module ApplicationHelper
 
   def employee_remarks_column_label(_month = nil)
     "EMP REMARKS"
-  end
-
-  # Parses values like "100", "100%", "1,000.5" into Float. Returns nil for blank/non-numeric text.
-  def parse_metric_number(value)
-    text = value.to_s.strip.delete(",").gsub("%", "").strip
-    return nil if text.blank?
-    return nil unless text.match?(/\A-?\d+(?:\.\d+)?\z/)
-
-    text.to_f
-  end
-
-  def metric_target_present?(value)
-    return false if value.blank?
-
-    number = parse_metric_number(value)
-    number.nil? || number.positive?
-  end
-
-  def progress_percentage_for(target_value, achievement_value)
-    target_number = parse_metric_number(target_value)
-    return nil unless target_number&.positive?
-    return nil if achievement_value.blank?
-
-    achievement_number = parse_metric_number(achievement_value) || achievement_value.to_s.delete(",").to_f
-    (((achievement_number / target_number) * 100.0 * 100).floor / 100.0)
   end
 end

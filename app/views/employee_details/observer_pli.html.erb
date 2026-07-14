@@ -20,10 +20,6 @@
 
           <% observer_index_path = observer_pli_index_path(@observer_level) %>
           <%= form_with url: observer_index_path, method: :get, local: true, class: "flex flex-col sm:flex-row gap-3", data: { turbo: false } do %>
-            <%= select_tag :quarter,
-                options_for_select([["All Quarters", ""]] + @quarter_options, @selected_observer_pli_quarter),
-                class: "w-full sm:w-48 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500",
-                onchange: "this.form.submit()" %>
             <%= select_tag :month,
                 options_for_select([["All Months", ""]] + @month_options, @selected_observer_pli_month),
                 class: "w-full sm:w-44 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500",

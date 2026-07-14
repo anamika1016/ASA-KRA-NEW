@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -139,8 +138,8 @@
     <div class="relative flex flex-col h-full max-h-full">
       <div class="sidebar-brand px-6 pt-4 flex items-center justify-center">
         <!-- Logo -->
-        <a class="sidebar-brand__link d-inline-block rounded-xl text-xl font-weight-semibold" href="#" aria-label="ASA">
-          <%= image_tag "ASA logo-dark-green.png", alt: "ASA Logo", class: "sidebar-brand__logo img-fluid", style: "width: 200px; height: 70px" %>
+        <a class="sidebar-brand__link d-inline-block rounded-xl text-xl font-weight-semibold" href="#" aria-label="PAPL">
+          <%= image_tag "PAPL logo-dark-green.png", alt: "PAPL Logo", class: "sidebar-brand__logo img-fluid", style: "width: 200px; height: 65px" %>
         </a>
         <!-- End Logo -->
       </div>
@@ -286,7 +285,12 @@
                   <path d="M17 16v-8" />
                   <path d="m6 11 3-3 3 2 4-5" />
                 </svg>
-                <span class="font-semibold">Qutry PLI %</span>
+                <span class="font-semibold">
+                  Quarterly PLI %
+                  <% if quarterly_pli_pending_reviews? %>
+                    <span class="sidebar-pending-dot" title="Pending Quarterly PLI reviews" aria-label="Pending Quarterly PLI reviews"></span>
+                  <% end %>
+                </span>
               <% end %>
             </li>
           <% end %>

@@ -87,6 +87,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_14_060000) do
     t.datetime "updated_at", null: false
     t.string "theme_name"
     t.string "annual_target_fy_2026_27"
+    t.index ["department_id", "activity_name"], name: "index_activities_on_department_id_and_name"
     t.index ["department_id"], name: "index_activities_on_department_id"
   end
 
@@ -98,6 +99,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_14_060000) do
     t.datetime "updated_at", null: false
     t.string "employee_reference"
     t.string "financial_year"
+    t.index ["department_type", "employee_reference", "financial_year"], name: "index_departments_on_type_reference_year"
     t.index ["financial_year"], name: "index_departments_on_financial_year"
   end
 
@@ -128,8 +130,13 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_14_060000) do
     t.string "obs_code2"
     t.string "obs_code3"
     t.string "obs_code4"
+    t.index "lower(TRIM(BOTH FROM COALESCE(l1_code, ''::character varying)))", name: "index_employee_details_on_normalized_l1_code"
+    t.index "lower(TRIM(BOTH FROM COALESCE(l1_employer_name, ''::character varying)))", name: "index_employee_details_on_normalized_l1_name"
+    t.index "lower(TRIM(BOTH FROM COALESCE(l2_code, ''::character varying)))", name: "index_employee_details_on_normalized_l2_code"
+    t.index "lower(TRIM(BOTH FROM COALESCE(l2_employer_name, ''::character varying)))", name: "index_employee_details_on_normalized_l2_name"
     t.index ["employee_code"], name: "index_employee_details_on_employee_code"
     t.index ["employee_email"], name: "index_employee_details_on_employee_email"
+    t.index ["employee_name", "department"], name: "index_employee_details_on_employee_name_and_department"
     t.index ["l1_code"], name: "index_employee_details_on_l1_code"
     t.index ["obs_code1"], name: "index_employee_details_on_obs_code1"
     t.index ["obs_code2"], name: "index_employee_details_on_obs_code2"
@@ -224,8 +231,14 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_14_060000) do
     t.bigint "employee_detail_id", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "month"
+    t.string "recipient_role", default: "l1"
+    t.bigint "recipient_employee_detail_id"
+    t.string "observer_level"
+    t.index ["employee_detail_id", "quarter", "month", "recipient_role", "observer_level"], name: "index_sms_logs_on_review_notification"
     t.index ["employee_detail_id", "quarter", "sent"], name: "index_sms_logs_on_employee_quarter_sent"
     t.index ["employee_detail_id"], name: "index_sms_logs_on_employee_detail_id"
+    t.index ["recipient_employee_detail_id"], name: "index_sms_logs_on_recipient_employee_detail_id"
   end
 
   create_table "target_submissions", force: :cascade do |t|
@@ -291,7 +304,9 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_14_060000) do
     t.index ["activity_id"], name: "index_user_details_on_activity_id"
     t.index ["department_id"], name: "index_user_details_on_department_id"
     t.index ["employee_detail_id", "activity_id", "financial_year"], name: "index_user_details_on_employee_activity_financial_year"
+    t.index ["employee_detail_id", "financial_year", "department_id", "activity_id"], name: "index_user_details_on_employee_year_department_activity"
     t.index ["employee_detail_id"], name: "index_user_details_on_employee_detail_id"
+    t.index ["financial_year", "employee_detail_id", "id"], name: "index_user_details_on_year_employee_id"
     t.index ["financial_year"], name: "index_user_details_on_financial_year"
     t.index ["user_id"], name: "index_user_details_on_user_id"
   end

@@ -43,5 +43,27 @@
     <% end %>
     
     <%= yield %>
+
+    <script>
+      function removeL1ManagerExtraColumn() {
+        if (!window.location.pathname.match(/\/employee_details\/l1\/?$/)) return;
+
+        const table = document.getElementById('employeeTable');
+        if (!table) return;
+
+        const headers = Array.from(table.querySelectorAll('thead th'));
+        const l2HeaderIndex = headers.findIndex((header) => header.textContent.trim().toLowerCase() === 'l2 manager');
+        if (l2HeaderIndex < 0) return;
+
+        table.querySelectorAll('tr').forEach((row) => {
+          const cells = row.children;
+          if (cells[l2HeaderIndex]) cells[l2HeaderIndex].remove();
+        });
+      }
+
+      removeL1ManagerExtraColumn();
+      document.addEventListener('DOMContentLoaded', removeL1ManagerExtraColumn);
+      document.addEventListener('turbo:load', removeL1ManagerExtraColumn);
+    </script>
   </body>
 </html>

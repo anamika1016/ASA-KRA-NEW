@@ -1,6 +1,6 @@
 import { Controller } from "@hotwired/stimulus"
 
-const STORAGE_KEY = "asa-sidebar-collapsed"
+const STORAGE_KEY = "papl-sidebar-collapsed"
 
 export default class extends Controller {
   static targets = ["sidebar", "toggleButton", "expandIcon", "collapseIcon"]
