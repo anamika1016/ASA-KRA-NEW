@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_07_14_060000) do
+ActiveRecord::Schema[8.0].define(version: 2026_07_14_000300) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -137,7 +137,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_14_060000) do
     t.index ["employee_code"], name: "index_employee_details_on_employee_code"
     t.index ["employee_email"], name: "index_employee_details_on_employee_email"
     t.index ["employee_name", "department"], name: "index_employee_details_on_employee_name_and_department"
-    t.index ["l1_code"], name: "index_employee_details_on_l1_code"
     t.index ["obs_code1"], name: "index_employee_details_on_obs_code1"
     t.index ["obs_code2"], name: "index_employee_details_on_obs_code2"
     t.index ["obs_code3"], name: "index_employee_details_on_obs_code3"
@@ -165,7 +164,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_14_060000) do
     t.integer "professionalism_conduct"
     t.integer "work_quality_accuracy"
     t.integer "initiative_problem_solving"
-    t.integer "asa_values_culture"
+    t.integer "papl_values_culture"
     t.integer "collaboration"
     t.integer "time_management_reliability"
     t.integer "growth_mindset_development"
@@ -236,7 +235,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_14_060000) do
     t.bigint "recipient_employee_detail_id"
     t.string "observer_level"
     t.index ["employee_detail_id", "quarter", "month", "recipient_role", "observer_level"], name: "index_sms_logs_on_review_notification"
-    t.index ["employee_detail_id", "quarter", "sent"], name: "index_sms_logs_on_employee_quarter_sent"
     t.index ["employee_detail_id"], name: "index_sms_logs_on_employee_detail_id"
     t.index ["recipient_employee_detail_id"], name: "index_sms_logs_on_recipient_employee_detail_id"
   end

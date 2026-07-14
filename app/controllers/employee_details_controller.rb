@@ -390,7 +390,7 @@ class EmployeeDetailsController < ApplicationController
   def l1
     authorize! :l1, EmployeeDetail
 
-    if current_user.hod? || current_user.admin?
+    if current_user.hod?
       # PERFORMANCE FIX: Optimize includes to preload all necessary associations
       @employee_details = EmployeeDetail.includes(
         user_details: [
@@ -400,17 +400,10 @@ class EmployeeDetailsController < ApplicationController
         ]
       ).all
     else
-      reviewer_code = current_user.employee_code.to_s.strip.downcase
-      reviewer_email = current_user.email.to_s.strip.downcase
-
       # PERFORMANCE FIX: Optimize includes to preload all necessary associations
       @employee_details = EmployeeDetail
                             .where(status: [ "pending", "l1_returned", "l1_approved", "l2_returned", "l2_approved" ])
-                            .where(
-                              "(:code != '' AND LOWER(TRIM(COALESCE(l1_code, ''))) = :code) OR (:email != '' AND LOWER(TRIM(COALESCE(l1_employer_name, ''))) = :email)",
-                              code: reviewer_code,
-                              email: reviewer_email
-                            )
+                            .where("LOWER(TRIM(COALESCE(l1_code, ''))) = ?", current_user.employee_code.to_s.strip.downcase)
                             .includes(
                               user_details: [
                                 :activity,
@@ -954,22 +947,6 @@ end
     @observer_context = true
     @observer_level = observer_level
     @observer_title = observer_menu_title(observer_level)
-    @financial_year = financial_year
-    @quarter = quarter
-    @month = month
-    @detail_payload = quarter_pli_payload_for(
-      @employee_detail,
-      financial_year,
-      quarter,
-      require_ready: false,
-      month: month
-    )
-    unless @detail_payload
-      redirect_to observer_pli_redirect_path(observer_level, financial_year: financial_year, quarter: quarter), alert: quarterly_pli_review_complete_message(@employee_detail)
-      return
-    end
-
-    @quarter_label = "#{quarter} (#{@detail_payload[:months].map { |payload_month| payload_month[:label] }.join('-')})"
     @observer_review = ObserverPliReview.find_by(
       employee_detail: @employee_detail,
       financial_year: financial_year,
@@ -978,7 +955,13 @@ end
       observer_level: observer_level
     )
 
-    render :observer_pli_detail
+    prepare_employee_detail_show(
+      financial_year: financial_year,
+      month: month,
+      quarter: quarter
+    )
+
+    render :show
   end
 
   def save_observer_pli

@@ -73,13 +73,13 @@ Rails.application.configure do
   # the I18n.default_locale when a translation cannot be found).
   config.i18n.fallbacks = true
 
-  config.action_mailer.default_url_options = { host: "kra.ploughmanagro.com", protocol: "https" }
+  config.action_mailer.default_url_options = { host: "asakra.asaindia.org", protocol: "https" }
   config.action_mailer.delivery_method = :smtp
 
   config.action_mailer.smtp_settings = {
     address: "smtp.ploughmanagro.com", # agar hosting provider ka smtp server yehi hai
     port: 587,
-    domain: "kra.ploughmanagro.com",
+    domain: "asakra.asaindia.org",
     user_name: "notification@ploughmanagro.com",
     password: "qtxqykbyjuyinwri", # yaha app password use karna better hai (normal password se issues aate hain)
     authentication: :plain,
@@ -90,7 +90,8 @@ Rails.application.configure do
   config.action_mailer.raise_delivery_errors = true
 
   # allow your domain
-  config.hosts << "kra.ploughmanagro.com"
+  config.hosts << "asakra.asaindia.org"
+  config.hosts << "139.59.65.216"
 
 
 

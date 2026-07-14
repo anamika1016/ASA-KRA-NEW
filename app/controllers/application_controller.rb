@@ -95,8 +95,8 @@ class ApplicationController < ActionController::Base
   def l1_pending_reviews_count
     return 0 unless user_signed_in? && has_l1_responsibilities?
 
-    employees = if current_user.hod? || current_user.admin?
-      EmployeeDetail.includes(user_details: [ :activity, achievements: :achievement_remark ]).to_a
+    employee_scope = if current_user.hod? || current_user.admin?
+      EmployeeDetail.all
     else
       code = current_user_identity_code
       email = current_user_identity_email
@@ -106,12 +106,17 @@ class ApplicationController < ActionController::Base
         "(:code != '' AND LOWER(TRIM(COALESCE(l1_code, ''))) = :code) OR (:email != '' AND LOWER(TRIM(COALESCE(l1_employer_name, ''))) = :email)",
         code: code.to_s.downcase,
         email: email.to_s.downcase
-      ).includes(user_details: [ :activity, achievements: :achievement_remark ]).to_a
+      )
     end
 
-    employees.sum do |employee_detail|
-      l1_pending_months_for_employee(employee_detail, current_financial_year)
-    end
+    Achievement.joins(user_detail: :employee_detail)
+      .merge(employee_scope)
+      .where(user_details: { financial_year: current_financial_year })
+      .where.not(achievement: [ nil, "" ])
+      .where(status: [ nil, "pending", "submitted" ])
+      .includes(user_detail: :employee_detail)
+      .to_a
+      .count { |achievement| l1_actionable_achievement?(achievement) }
   rescue StandardError
     0
   end
@@ -125,61 +130,6 @@ class ApplicationController < ActionController::Base
     return false if employee_detail.blank?
 
     observer_chain_approved_for_achievement?(employee_detail, achievement.user_detail&.financial_year, achievement.month)
-  end
-
-  def l1_pending_months_for_employee(employee_detail, financial_year)
-    details = employee_detail.user_details.select do |detail|
-      detail.financial_year.to_s == financial_year.to_s && detail.activity.present?
-    end
-    return 0 if details.empty?
-
-    review_months_for_sidebar.count do |month|
-      achievements = details.flat_map do |detail|
-        next [] unless sidebar_target_present_for_detail_month?(detail, month)
-
-        detail.achievements.select do |achievement|
-          achievement.month.to_s.downcase == month && achievement.achievement.present?
-        end
-      end
-      next false if achievements.empty?
-      next false unless observer_chain_approved_for_achievement?(employee_detail, financial_year, month)
-
-      sidebar_l1_month_status(achievements) == "pending"
-    end
-  end
-
-  def review_months_for_sidebar
-    %w[april may june july august september october november december january february march]
-  end
-
-  def sidebar_target_present_for_detail_month?(detail, month)
-    return false unless detail.respond_to?(month)
-
-    target_value = detail.public_send(month).to_s.strip
-    return false if target_value.blank?
-
-    target_text = target_value.delete(",")
-    target_is_numeric = target_text.match?(/\A-?\d+(?:\.\d+)?\z/)
-    !target_is_numeric || target_text.to_f.positive?
-  end
-
-  def sidebar_l1_month_status(achievements)
-    statuses = achievements.map { |achievement| achievement.status.presence || "pending" }
-    has_l1_approval = achievements.any? do |achievement|
-      achievement.achievement_remark&.l1_percentage.present? ||
-        achievement.achievement_remark&.l1_remarks.present?
-    end
-    has_l2_approval = achievements.any? do |achievement|
-      achievement.achievement_remark&.l2_percentage.present? ||
-        achievement.achievement_remark&.l2_remarks.present?
-    end
-
-    return "l2_returned" if statuses.any? { |status| status == "l2_returned" }
-    return "l2_approved" if statuses.all? { |status| status == "l2_approved" } || has_l2_approval
-    return "l1_returned" if statuses.any? { |status| status == "l1_returned" }
-    return "l1_approved" if statuses.all? { |status| status == "l1_approved" } || has_l1_approval
-
-    "pending"
   end
 
   def observer_chain_approved_for_achievement?(employee_detail, financial_year, month)
