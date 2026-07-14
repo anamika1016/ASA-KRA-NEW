@@ -143,7 +143,7 @@
         </div>
 
         <div class="p-6">
-          <div class="table-wrapper overflow-auto rounded-[24px] border border-slate-200 shadow-sm">
+          <div class="table-wrapper rounded-[24px] border border-slate-200 shadow-sm">
             <table class="table table-hover w-full min-w-full" id="activityTable">
               <thead class="bg-gray-800">
                 <% quarter_groups = [
@@ -152,13 +152,14 @@
                   { label: "OCT - DEC", key: "october-december", months: [["OCT", "october"], ["NOV", "november"], ["DEC", "december"]] },
                   { label: "JAN - MAR", key: "january-march", months: [["JAN", "january"], ["FEB", "february"], ["MAR", "march"]] }
                 ] %>
+                <% selected_month_key = @selected_month.to_s %>
                 <tr>
                   <th rowspan="3" class="serial-column px-4 py-3 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600">S.No</th>
                   <th rowspan="3" class="activity-column px-4 py-3 text-left text-xs font-medium text-white tracking-wider border-r border-gray-600">Key result indicators</th>
                   <th rowspan="3" class="unit-column px-4 py-3 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600">Unit of measurement</th>
                   <th rowspan="3" class="annual-target-column px-4 py-3 text-left text-xs font-medium text-white tracking-wider border-r border-gray-600"><%= annual_target_fy_label(@selected_financial_year) %></th>
                   <% quarter_groups.each do |quarter| %>
-                    <th colspan="12" class="px-4 py-3 text-center text-xs font-semibold text-white tracking-widest border-r border-gray-500 bg-gray-900 quarter-header" data-quarter="<%= quarter[:key] %>">
+                    <th colspan="12" class="px-4 py-3 text-center text-xs font-semibold text-white tracking-widest border-r border-gray-500 bg-gray-900 quarter-header" data-quarter="<%= quarter[:key] %>" data-quarter-hidden="true">
                       <%= quarter[:label] %>
                     </th>
                   <% end %>
@@ -166,17 +167,18 @@
                 <tr>
                   <% quarter_groups.each do |quarter| %>
                     <% quarter[:months].each do |month_label, month_key| %>
-                      <th colspan="4" class="px-4 py-3 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600 bg-gray-700 month-header" data-month="<%= month_key %>" data-quarter="<%= quarter[:key] %>"><%= month_label %></th>
+                      <th colspan="4" class="px-4 py-3 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600 bg-gray-700 month-header" data-month="<%= month_key %>" data-quarter="<%= quarter[:key] %>" <%= 'data-month-hidden="true"'.html_safe unless month_key == selected_month_key %>><%= month_label %></th>
                     <% end %>
                   <% end %>
                 </tr>
                 <tr class="bg-gray-700">
                   <% quarter_groups.each do |quarter| %>
                     <% quarter[:months].each do |month_label, month_key| %>
-                      <th class="px-3 py-2 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600 month-subheader" data-month="<%= month_key %>" data-quarter="<%= quarter[:key] %>">Target</th>
-                      <th class="achievement-header px-3 py-2 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600 month-subheader" data-month="<%= month_key %>" data-quarter="<%= quarter[:key] %>">Achievement</th>
-                      <th class="total-achievement-header px-3 py-2 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600 month-subheader" data-month="<%= month_key %>" data-quarter="<%= quarter[:key] %>">% Progress</th>
-                      <th class="px-3 py-2 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600 month-subheader remarks-header" data-month="<%= month_key %>" data-quarter="<%= quarter[:key] %>"><%= employee_remarks_column_label(month_label) %></th>
+                      <% hidden_month_attr = month_key == selected_month_key ? nil : 'data-month-hidden="true"' %>
+                      <th class="px-3 py-2 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600 month-subheader" data-month="<%= month_key %>" data-quarter="<%= quarter[:key] %>" <%= hidden_month_attr&.html_safe %>>Target</th>
+                      <th class="achievement-header px-3 py-2 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600 month-subheader" data-month="<%= month_key %>" data-quarter="<%= quarter[:key] %>" <%= hidden_month_attr&.html_safe %>>Achievement</th>
+                      <th class="total-achievement-header px-3 py-2 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600 month-subheader" data-month="<%= month_key %>" data-quarter="<%= quarter[:key] %>" <%= hidden_month_attr&.html_safe %>>% Progress</th>
+                      <th class="px-3 py-2 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600 month-subheader remarks-header" data-month="<%= month_key %>" data-quarter="<%= quarter[:key] %>" <%= hidden_month_attr&.html_safe %>><%= employee_remarks_column_label(month_label) %></th>
                     <% end %>
                   <% end %>
                 </tr>
@@ -256,14 +258,15 @@
                           monthly_summary_totals[month][:progress_sum] += row_progress
                           monthly_summary_totals[month][:progress_count] += 1
                         end
+                        hidden_month_attr = month.to_s == selected_month_key ? nil : 'data-month-hidden="true"'
                       %>
                       
-                      <td class="target-cell px-3 py-3 text-sm text-gray-800 text-center border-r border-gray-200 bg-gray-50 month-cell" data-month="<%= month %>" data-has-target="<%= has_target %>">
+                      <td class="target-cell px-3 py-3 text-sm text-gray-800 text-center border-r border-gray-200 bg-gray-50 month-cell" data-month="<%= month %>" data-has-target="<%= has_target %>" <%= hidden_month_attr&.html_safe %>>
                         <span class="<%= has_target ? 'target-static-value text-gray-800 font-medium' : 'target-static-value text-gray-400' %>">
                           <%= target_value.presence || '-' %>
                         </span>
                       </td>
-                      <td class="achievement-cell px-3 py-3 text-sm text-center border-r border-gray-200 month-cell" data-month="<%= month %>" data-has-target="<%= has_target %>">
+                      <td class="achievement-cell px-3 py-3 text-sm text-center border-r border-gray-200 month-cell" data-month="<%= month %>" data-has-target="<%= has_target %>" <%= hidden_month_attr&.html_safe %>>
                         <input 
                           type="number" 
                           step="any"
@@ -279,12 +282,13 @@
                       <td class="total-achievement-cell px-3 py-3 text-sm text-center border-r border-gray-200 month-cell"
                           data-month="<%= month %>"
                           data-has-target="<%= has_target %>"
-                          data-target-value="<%= target_value %>">
+                          data-target-value="<%= target_value %>"
+                          <%= hidden_month_attr&.html_safe %>>
                         <span class="<%= total_achievement_percentage ? 'total-achievement-value text-emerald-700 font-semibold bg-emerald-50 px-2 py-1 rounded' : 'total-achievement-value text-gray-400' %>">
                           <%= total_achievement_percentage ? "#{format('%.2f', total_achievement_percentage)}%" : '-' %>
                         </span>
                       </td>
-                      <td class="remarks-cell px-3 py-3 text-sm text-center border-r border-gray-200 month-cell" data-month="<%= month %>" data-has-target="<%= has_target %>">
+                      <td class="remarks-cell px-3 py-3 text-sm text-center border-r border-gray-200 month-cell" data-month="<%= month %>" data-has-target="<%= has_target %>" <%= hidden_month_attr&.html_safe %>>
                         <textarea 
                           name="achievement[<%= detail.id %>][<%= month.to_s.downcase %>][employee_remarks]" 
                           placeholder="EMP RM"
@@ -303,14 +307,15 @@
                   <% months.each do |month| %>
                     <% month_total = monthly_summary_totals[month] %>
                     <% progress_total = month_total[:progress_count].positive? ? ((month_total[:progress_sum] / month_total[:progress_count]) * 100).floor / 100.0 : nil %>
-                    <td class="monthly-summary-target px-3 py-3 text-center text-sm font-bold border-r border-gray-600 month-cell" data-month="<%= month %>" data-summary-month="<%= month %>">
+                    <% hidden_month_attr = month.to_s == selected_month_key ? nil : 'data-month-hidden="true"' %>
+                    <td class="monthly-summary-target px-3 py-3 text-center text-sm font-bold border-r border-gray-600 month-cell" data-month="<%= month %>" data-summary-month="<%= month %>" <%= hidden_month_attr&.html_safe %>>
                     </td>
-                    <td class="monthly-summary-achievement px-3 py-3 text-center text-sm font-bold border-r border-gray-600 month-cell" data-month="<%= month %>" data-summary-month="<%= month %>">
+                    <td class="monthly-summary-achievement px-3 py-3 text-center text-sm font-bold border-r border-gray-600 month-cell" data-month="<%= month %>" data-summary-month="<%= month %>" <%= hidden_month_attr&.html_safe %>>
                     </td>
-                    <td class="monthly-summary-total px-3 py-3 text-center text-sm font-bold border-r border-gray-600 month-cell" data-month="<%= month %>" data-summary-month="<%= month %>">
+                    <td class="monthly-summary-total px-3 py-3 text-center text-sm font-bold border-r border-gray-600 month-cell" data-month="<%= month %>" data-summary-month="<%= month %>" <%= hidden_month_attr&.html_safe %>>
                       <span class="<%= progress_total ? 'summary-total-achievement-value text-emerald-900 font-bold bg-emerald-100 px-2 py-1 rounded' : 'summary-total-achievement-value text-gray-300' %>"><%= progress_total ? "#{format('%.2f', progress_total)}%" : '-' %></span>
                     </td>
-                    <td class="monthly-summary-remarks px-3 py-3 text-center text-sm font-bold border-r border-gray-600 month-cell" data-month="<%= month %>" data-summary-month="<%= month %>">
+                    <td class="monthly-summary-remarks px-3 py-3 text-center text-sm font-bold border-r border-gray-600 month-cell" data-month="<%= month %>" data-summary-month="<%= month %>" <%= hidden_month_attr&.html_safe %>>
                     </td>
                   <% end %>
                 </tr>
@@ -794,6 +799,9 @@ function hasFilledTargetValueForFilter(value) {
 
 .table-wrapper {
   overflow-x: auto;
+  overflow-y: visible;
+  max-height: none;
+  height: auto;
   background: linear-gradient(180deg, #ffffff 0%, #f8fbfd 100%);
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
 }
@@ -973,11 +981,11 @@ function hasFilledTargetValueForFilter(value) {
 .achievement-input:disabled,
 .remarks-textarea:disabled {
   cursor: not-allowed;
-  color: #94a3b8;
-  background: #f1f5f9;
+  color: #334155;
+  background: #f8fafc;
   border-color: #cbd5e1;
   box-shadow: none;
-  opacity: 0.75;
+  opacity: 1;
 }
 
 .entry-lock-banner {
@@ -1013,7 +1021,7 @@ function hasFilledTargetValueForFilter(value) {
   text-shadow: none;
 }
 
-.bg-white {
+.main-content .bg-white {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
 }
@@ -1059,7 +1067,7 @@ input[type="submit"]:hover, button:hover {
   to { opacity: 1; transform: translateY(0); }
 }
 
-.bg-white {
+.main-content .bg-white {
   animation: fadeIn 0.6s ease-out;
 }
 
@@ -1632,7 +1640,8 @@ function handleAchievementFormSubmission() {
   console.log('Form found:', form ? 'Yes' : 'No');
   console.log('Submit button found:', submitBtn ? 'Yes' : 'No');
   
-  if (!form) return;
+  if (!form || form.dataset.submitBound === 'true') return;
+  form.dataset.submitBound = 'true';
   
   // Form validation
   form.addEventListener('submit', function(e) {
@@ -1923,7 +1932,7 @@ function updateSubmittedAchievementsTable() {
   console.log('Submitted Achievements table updated with new data');
 }
 
-document.addEventListener('turbo:load', function() {
+function initializeUserDetailPage() {
 
     // A function to set up all the event listeners for the page
     function initializePage() {
@@ -2268,8 +2277,14 @@ document.addEventListener('turbo:load', function() {
     
     // Run the setup function for the page
     initializePage();
+    initializeAchievementFilters();
     
     // Initialize achievement form handling
     initializeAchievementForm();
-  });
+}
+
+document.addEventListener('DOMContentLoaded', initializeUserDetailPage);
+document.addEventListener('turbo:load', initializeUserDetailPage);
+
+initializeUserDetailPage();
 </script>

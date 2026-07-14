@@ -569,6 +569,8 @@ class UserDetailsController < ApplicationController
       sms_results = []
       processed_employees = Set.new
       errors = []
+      preload_ids = (achievement_data.keys + target_update_data.keys).map(&:to_s).reject(&:blank?).uniq
+      user_details_by_id = UserDetail.includes(:activity, :employee_detail).where(id: preload_ids).index_by { |detail| detail.id.to_s }
 
 
       ActiveRecord::Base.transaction do
@@ -701,14 +703,7 @@ class UserDetailsController < ApplicationController
                   quarters_filled.each do |quarter|
                     next if check_sms_already_sent(employee_detail.id, quarter)
 
-                    sms_result = send_sms_to_l1(employee_detail, quarter, user_detail)
-                    sms_results << {
-                      quarter: quarter,
-                      employee: employee_detail.employee_name,
-                      success: sms_result[:success],
-                      message: sms_result[:success] ? "SMS sent successfully" : sms_result[:error]
-                    }
-                    mark_sms_as_sent(employee_detail.id, quarter)
+                    sms_results.concat(send_initial_review_sms(employee_detail, quarter, selected_submission_month, user_detail))
                   end
                 end
               end
@@ -718,7 +713,7 @@ class UserDetailsController < ApplicationController
 
         if target_update_data.present?
           target_update_data.each do |user_detail_id, monthly_targets|
-            user_detail = UserDetail.find_by(id: user_detail_id)
+            user_detail = user_details_by_id[user_detail_id.to_s]
             next unless user_detail
 
             target_attributes = {}
@@ -747,7 +742,7 @@ class UserDetailsController < ApplicationController
         end
 
         achievement_data.each do |user_detail_id, monthly_data|
-          user_detail = UserDetail.find_by(id: user_detail_id)
+          user_detail = user_details_by_id[user_detail_id.to_s]
           next unless user_detail
 
           employee_detail = user_detail.employee_detail
@@ -821,15 +816,7 @@ class UserDetailsController < ApplicationController
               sms_already_sent = check_sms_already_sent(employee_detail.id, quarter)
 
               unless sms_already_sent
-                sms_result = send_sms_to_l1(employee_detail, quarter, user_detail)
-                sms_results << {
-                  quarter: quarter,
-                  employee: employee_detail.employee_name,
-                  success: sms_result[:success],
-                  message: sms_result[:success] ? "SMS sent successfully" : sms_result[:error]
-                }
-
-                mark_sms_as_sent(employee_detail.id, quarter)
+                sms_results.concat(send_initial_review_sms(employee_detail, quarter, selected_submission_month, user_detail))
               end
             end
           end
@@ -1987,6 +1974,84 @@ class UserDetailsController < ApplicationController
       Rails.logger.error "Backtrace: #{e.backtrace.first(5).join("\n")}"
       { success: false, error: "SMS service error: #{e.message}" }
     end
+  end
+
+  def send_initial_review_sms(employee_detail, quarter, month, user_detail = nil)
+    observer_levels = observer_levels_for_employee(employee_detail)
+
+    if observer_levels.any?
+      send_sms_to_observers(employee_detail, quarter, month, observer_levels)
+    else
+      return [] if check_sms_already_sent(employee_detail.id, quarter)
+
+      sms_result = send_sms_to_l1(employee_detail, quarter, user_detail)
+      mark_sms_as_sent(employee_detail.id, quarter) if sms_result[:success]
+      [ {
+        quarter: quarter,
+        month: month,
+        recipient: "L1",
+        employee: employee_detail.employee_name,
+        success: sms_result[:success],
+        message: sms_result[:success] ? "SMS sent successfully" : sms_result[:error]
+      } ]
+    end
+  end
+
+  def send_sms_to_observers(employee_detail, quarter, month, observer_levels)
+    observer_codes = observer_levels.index_with { |level| employee_detail.public_send(level).to_s.strip }
+    observers_by_code = EmployeeDetail
+      .where("LOWER(TRIM(employee_code)) IN (?)", observer_codes.values.map(&:downcase))
+      .index_by { |observer| observer.employee_code.to_s.strip.downcase }
+
+    observer_levels.map do |observer_level|
+      observer_code = observer_codes[observer_level]
+      sms_key = observer_sms_log_key(observer_level, quarter, month)
+
+      if SmsLog.already_sent?(employee_detail.id, sms_key)
+        next {
+          quarter: quarter,
+          month: month,
+          recipient: observer_level,
+          employee: employee_detail.employee_name,
+          success: true,
+          message: "SMS already sent"
+        }
+      end
+
+      observer = observers_by_code[observer_code.downcase]
+      result = if observer&.mobile_number.present?
+        SmsService.send_sms(
+          observer.mobile_number,
+          SmsService.observer_submission_message(employee_detail.employee_name, quarter, month_label_for_sms(month), observer_level)
+        )
+      else
+        { success: false, message: "Observer mobile number not found for #{observer_code}" }
+      end
+
+      mark_sms_as_sent(employee_detail.id, sms_key) if result[:success]
+      {
+        quarter: quarter,
+        month: month,
+        recipient: observer_level,
+        employee: employee_detail.employee_name,
+        success: result[:success],
+        message: result[:success] ? "SMS sent successfully" : result[:message]
+      }
+    end.compact
+  end
+
+  def observer_levels_for_employee(employee_detail)
+    ApplicationHelper::OBSERVER_LEVELS.select do |observer_level|
+      employee_detail.public_send(observer_level).to_s.strip.present?
+    end
+  end
+
+  def observer_sms_log_key(observer_level, quarter, month)
+    "observer:#{observer_level}:#{month.presence || 'all'}:#{quarter}"
+  end
+
+  def month_label_for_sms(month)
+    month.present? ? short_month_label(month) : nil
   end
 
   def determine_quarter(month)

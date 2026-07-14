@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_07_12_090000) do
+ActiveRecord::Schema[8.0].define(version: 2026_07_14_060000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -128,6 +128,9 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_12_090000) do
     t.string "obs_code2"
     t.string "obs_code3"
     t.string "obs_code4"
+    t.index ["employee_code"], name: "index_employee_details_on_employee_code"
+    t.index ["employee_email"], name: "index_employee_details_on_employee_email"
+    t.index ["l1_code"], name: "index_employee_details_on_l1_code"
     t.index ["obs_code1"], name: "index_employee_details_on_obs_code1"
     t.index ["obs_code2"], name: "index_employee_details_on_obs_code2"
     t.index ["obs_code3"], name: "index_employee_details_on_obs_code3"
@@ -221,6 +224,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_12_090000) do
     t.bigint "employee_detail_id", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.index ["employee_detail_id", "quarter", "sent"], name: "index_sms_logs_on_employee_quarter_sent"
     t.index ["employee_detail_id"], name: "index_sms_logs_on_employee_detail_id"
   end
 

@@ -1,6 +1,7 @@
 require "roo"
 require "axlsx"
 require "securerandom"
+require "set"
 
 class EmployeeDetailsController < ApplicationController
   before_action :set_employee_detail, only: [ :edit, :update, :destroy, :toggle_portal_status ]
@@ -10,6 +11,9 @@ class EmployeeDetailsController < ApplicationController
     @employee_detail = EmployeeDetail.new
     @q = EmployeeDetail.ransack(params[:q])
     @employee_details = @q.result.order(Arel.sql("LOWER(employee_name) ASC")).page(params[:page]).per(10)
+    @employee_name_by_code = employee_name_lookup_for_codes(
+      @employee_details.flat_map { |employee| [ employee.obs_code1, employee.obs_code2, employee.obs_code3, employee.obs_code4 ] }
+    )
   end
 
   def create
@@ -355,6 +359,11 @@ class EmployeeDetailsController < ApplicationController
     end
 
     prepare_review_filters(@employee_details)
+    preload_observer_review_cache(
+      @employee_details,
+      financial_year: @selected_financial_year,
+      months: @selected_review_month.present? ? [ @selected_review_month ] : review_months
+    )
 
     # Group employees by quarters for display
     @quarterly_data = group_employees_by_quarters(@employee_details)
@@ -664,6 +673,11 @@ end
     }.compact.reject(&:blank?).uniq.sort.reverse
 
     @selected_financial_year ||= @financial_year_options.first
+    preload_observer_review_cache(
+      employee_details,
+      financial_year: @selected_financial_year,
+      quarters: @selected_quarterly_pli_quarter.present? ? [ @selected_quarterly_pli_quarter ] : get_all_quarters
+    )
     @quarterly_pli_rows = build_quarterly_pli_rows(
       employee_details,
       financial_year: @selected_financial_year,
@@ -870,6 +884,9 @@ end
 
     if review.save
       save_observer_activity_remarks(employee_detail, month, observer_level)
+      @observer_review_lookup = nil
+      @approved_observer_review_keys = nil
+      send_l1_sms_after_observer_chain(employee_detail, financial_year, quarter, month) if review.status == "approved"
       notice_message = review.status == "returned" ? "#{observer_menu_title(observer_level)} returned #{month_label(month)} for #{employee_detail.employee_name}." : "#{observer_menu_title(observer_level)} approved #{month_label(month)} for #{employee_detail.employee_name}."
       redirect_to observer_pli_redirect_path(observer_level, financial_year: financial_year, quarter: quarter), notice: notice_message
     else
@@ -1094,6 +1111,30 @@ end
 
   private
 
+  def employee_name_lookup_for_codes(codes)
+    @employee_name_lookup ||= {}
+    normalized_codes = Array(codes).filter_map { |code| code.to_s.strip.downcase.presence }.uniq
+    missing_codes = normalized_codes - @employee_name_lookup.keys
+
+    if missing_codes.any?
+      EmployeeDetail
+        .where("LOWER(TRIM(employee_code)) IN (?)", missing_codes)
+        .pluck(:employee_code, :employee_name)
+        .each do |employee_code, employee_name|
+          @employee_name_lookup[employee_code.to_s.strip.downcase] = employee_name
+        end
+    end
+
+    @employee_name_lookup
+  end
+
+  def employee_name_for_code(code)
+    normalized_code = code.to_s.strip.downcase
+    return nil if normalized_code.blank?
+
+    employee_name_lookup_for_codes([ normalized_code ])[normalized_code]
+  end
+
   def prepare_employee_detail_show(financial_year: nil, month: nil, quarter: nil)
     @user_detail_id = params[:user_detail_id]
     @selected_month = normalize_month_param(month || params[:month])
@@ -1198,13 +1239,18 @@ end
   def observer_month_remarks_for(employee_detail, financial_year, quarter, month, observer_level)
     return [] unless observer_levels_for(employee_detail).include?(observer_level)
 
-    review = ObserverPliReview.find_by(
-      employee_detail: employee_detail,
-      financial_year: financial_year,
-      quarter: quarter,
-      month: month,
-      observer_level: observer_level
-    )
+    key = [ employee_detail.id, financial_year.to_s, quarter.to_s, month.to_s, observer_level.to_s ]
+    review = if defined?(@observer_review_lookup) && @observer_review_lookup
+      @observer_review_lookup[key]
+    else
+      ObserverPliReview.find_by(
+        employee_detail: employee_detail,
+        financial_year: financial_year,
+        quarter: quarter,
+        month: month,
+        observer_level: observer_level
+      )
+    end
     review&.final_remarks.present? ? [ review.final_remarks ] : []
   end
 
@@ -1433,6 +1479,12 @@ end
     }.compact.reject(&:blank?).uniq.sort.reverse
 
     @selected_financial_year ||= @financial_year_options.first
+    preload_observer_review_cache(
+      employee_details,
+      financial_year: @selected_financial_year,
+      quarters: @selected_observer_pli_quarter.present? ? [ @selected_observer_pli_quarter ] : get_all_quarters,
+      months: @selected_observer_pli_month.present? ? [ @selected_observer_pli_month ] : review_months
+    )
     @observer_pli_rows = build_observer_pli_rows(
       employee_details,
       observer_level: observer_level,
@@ -1537,7 +1589,42 @@ end
     end
   end
 
+  def preload_observer_review_cache(employee_details, financial_year: nil, quarters: nil, months: nil)
+    employee_ids = Array(employee_details).map(&:id).compact
+    return if employee_ids.empty?
+
+    scope = ObserverPliReview.where(employee_detail_id: employee_ids)
+    scope = scope.where(financial_year: financial_year) if financial_year.present?
+    scope = scope.where(quarter: quarters) if quarters.present?
+    scope = scope.where(month: months) if months.present?
+
+    reviews = scope.to_a
+    @observer_review_lookup = reviews.index_by do |review|
+      [
+        review.employee_detail_id,
+        review.financial_year.to_s,
+        review.quarter.to_s,
+        review.month.to_s,
+        review.observer_level.to_s
+      ]
+    end
+    @approved_observer_review_keys = reviews.each_with_object(Set.new) do |review, keys|
+      next unless review.status == "approved"
+
+      keys.add([
+        review.employee_detail_id,
+        review.financial_year.to_s,
+        review.quarter.to_s,
+        review.month.to_s,
+        review.observer_level.to_s
+      ])
+    end
+  end
+
   def observer_review_approved?(employee_detail, financial_year, quarter, month, observer_level)
+    key = [ employee_detail.id, financial_year.to_s, quarter.to_s, month.to_s, observer_level.to_s ]
+    return @approved_observer_review_keys.include?(key) if defined?(@approved_observer_review_keys) && @approved_observer_review_keys
+
     ObserverPliReview.exists?(
       employee_detail: employee_detail,
       financial_year: financial_year,
@@ -2034,7 +2121,7 @@ end
     code = employee_detail.public_send(observer_level).to_s.strip
     return nil if code.blank?
 
-    EmployeeDetail.find_by(employee_code: code)&.employee_name
+    employee_name_for_code(code)
   end
 
   def observer_activity_remarks_present?(employee_detail, month, observer_level)
@@ -2059,6 +2146,44 @@ end
       remark.public_send("#{remark_column}=", bounded_review_text(remark_text))
       remark.save!
     end
+  end
+
+  def send_l1_sms_after_observer_chain(employee_detail, financial_year, quarter, month)
+    return unless observer_chain_approved_for_month?(employee_detail, financial_year, quarter, month)
+
+    sms_key = l1_sms_log_key(quarter, month)
+    return if SmsLog.already_sent?(employee_detail.id, sms_key)
+    return if SmsLog.already_sent?(employee_detail.id, quarter)
+
+    l1_code = employee_detail.l1_code.to_s.strip
+    return if l1_code.blank?
+
+    l1_manager = EmployeeDetail.where("LOWER(TRIM(employee_code)) = ?", l1_code.downcase).first ||
+                 EmployeeDetail.where("employee_code LIKE ?", "#{l1_code}%").first
+    return if l1_manager&.mobile_number.blank?
+
+    result = SmsService.send_sms(
+      l1_manager.mobile_number,
+      SmsService.submission_message(employee_detail.employee_name, "#{quarter} #{month_label(month)}")
+    )
+    mark_sms_log(employee_detail.id, sms_key) if result[:success]
+  rescue => e
+    Rails.logger.error "L1 SMS after observer approval failed: #{e.message}"
+  end
+
+  def l1_sms_log_key(quarter, month)
+    "l1:#{month}:#{quarter}"
+  end
+
+  def mark_sms_log(employee_detail_id, key)
+    SmsLog.create!(
+      employee_detail_id: employee_detail_id,
+      quarter: key,
+      sent: true,
+      sent_at: Time.current
+    )
+  rescue ActiveRecord::RecordNotUnique
+    nil
   end
 
   def save_l1_manager_remark_without_achievement(detail, month)
@@ -2202,11 +2327,10 @@ end
       get_all_quarters.each do |quarter|
         quarter_months = get_quarter_months(quarter)
 
-        # FIXED: Get ALL activities for this quarter, not just those with achievements
-        quarter_activities = employee.user_details
-                                    .where(activity_id: Activity.joins(:department)
-                                                               .where(departments: { department_type: employee.department })
-                                                               .select(:id))
+        # Use already-loaded user_details to avoid one query per employee/quarter.
+        quarter_activities = employee.user_details.select do |detail|
+          detail.department&.department_type.to_s == employee.department.to_s
+        end
 
         if quarter_activities.any?
           employee_quarter_data = {
@@ -2218,8 +2342,7 @@ end
             overall_status: "pending"
           }
 
-          # PERFORMANCE FIX: Preload achievements to avoid N+1 queries
-          quarter_activities.includes(:achievements, :activity, :department).each do |user_detail|
+          quarter_activities.each do |user_detail|
             # PERFORMANCE FIX: Create a hash of achievements by month for fast lookup
             achievements_by_month = user_detail.achievements.index_by(&:month)
 

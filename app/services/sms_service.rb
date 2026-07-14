@@ -118,6 +118,12 @@ class SmsService
     "Emp-Name: #{employee_name} has submitted his #{quarter} KRA MIS. Please review and approve in the system. Action For Social Advancement (ASA)"
   end
 
+  def self.observer_submission_message(employee_name, quarter, month = nil, observer_level = nil)
+    review_period = [ quarter, month ].compact.join(" ")
+    observer_label = observer_level.to_s.gsub("obs_code", "Observer ")
+    "Emp-Name: #{employee_name} has submitted his #{review_period} KRA MIS. Please review and approve in the system. #{observer_label}. Action For Social Advancement (ASA)"
+  end
+
   def self.l1_approval_message(employee_name, quarter)
     "Your #{quarter} KRA MIS has been approved by L1 Manager. Action For Social Advancement (ASA)"
   end

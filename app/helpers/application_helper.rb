@@ -195,6 +195,9 @@ module ApplicationHelper
     code = employee_detail.public_send(observer_level).to_s.strip
     return nil if code.blank?
 
+    cached_name = @employee_name_by_code&.[](code.downcase)
+    return cached_name if cached_name.present?
+
     EmployeeDetail.where("LOWER(employee_code) = ?", code.downcase).pick(:employee_name)
   end
 
