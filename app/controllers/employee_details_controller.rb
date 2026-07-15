@@ -1271,8 +1271,7 @@ end
     return { success: false, error: "L1 manager not found with code: #{l1_code}" } unless l1_manager
     return { success: false, error: "L1 manager mobile number not found" } if l1_manager.mobile_number.blank?
 
-    month_text = month.present? ? " #{month_label(month)}" : ""
-    message = "Emp-Code: #{employee_detail.employee_code}, Emp-Name: #{employee_detail.employee_name} has submitted his#{month_text} #{quarter_label} Qtr KRA MIS. Please review and approve in the system. Ploughman Agro Private Limited"
+    message = SmsNotificationService.submission_message(employee_detail.employee_name, quarter_label)
 
     SmsNotificationService.send_message(l1_manager.mobile_number, message)
   end

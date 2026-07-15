@@ -2010,7 +2010,7 @@ class UserDetailsController < ApplicationController
       l1_mobile = l1_manager.mobile_number
       return { success: false, error: "L1 manager mobile number not found" } unless l1_mobile.present?
 
-      message = "Emp-Code: #{employee_detail.employee_code}, Emp-Name: #{employee_detail.employee_name} has submitted his #{quarter} Qtr KRA MIS. Please review and approve in the system. Ploughman Agro Private Limited"
+      message = SmsNotificationService.submission_message(employee_detail.employee_name, quarter)
 
       SmsNotificationService.send_message(l1_mobile, message)
 
@@ -2023,15 +2023,44 @@ class UserDetailsController < ApplicationController
 
   def notify_reviewers_after_submission(employee_detail, quarter, month, user_detail)
     observer_levels = observer_levels_for_employee(employee_detail)
-    if observer_levels.any?
-      send_sms_to_observers(employee_detail, quarter, month, observer_levels)
-    else
-      return { success: true, message: "L1 SMS already sent" } if check_sms_already_sent(employee_detail.id, quarter, month)
+    observer_result = observer_levels.any? ? send_sms_to_observers(employee_detail, quarter, month, observer_levels) : nil
+    l1_result = send_l1_submission_sms_once(employee_detail, quarter, month, user_detail)
 
-      result = send_sms_to_l1(employee_detail, quarter, user_detail)
-      mark_sms_as_sent(employee_detail.id, quarter, month) if result[:success]
-      result
+    notification_results = [ observer_result, l1_result ].compact
+    successful_results = notification_results.select { |result| result[:success] }
+    failed_results = notification_results.reject { |result| result[:success] }
+
+    if failed_results.empty? && successful_results.any?
+      {
+        success: true,
+        message: notification_results.map { |result| result[:message] }.compact.join(", "),
+        observer_results: observer_result&.dig(:observer_results),
+        l1_result: l1_result
+      }
+    elsif successful_results.any?
+      {
+        success: true,
+        message: successful_results.map { |result| result[:message] }.compact.join(", "),
+        error: failed_results.map { |result| result[:error] }.compact.join(", "),
+        observer_results: observer_result&.dig(:observer_results),
+        l1_result: l1_result
+      }
+    else
+      {
+        success: false,
+        error: failed_results.map { |result| result[:error] }.compact.first || "SMS could not be sent",
+        observer_results: observer_result&.dig(:observer_results),
+        l1_result: l1_result
+      }
     end
+  end
+
+  def send_l1_submission_sms_once(employee_detail, quarter, month, user_detail)
+    return { success: true, message: "L1 SMS already sent", already_sent: true } if check_sms_already_sent(employee_detail.id, quarter, month)
+
+    result = send_sms_to_l1(employee_detail, quarter, user_detail)
+    mark_sms_as_sent(employee_detail.id, quarter, month) if result[:success]
+    result
   end
 
   def observer_levels_for_employee(employee_detail)
@@ -2093,8 +2122,7 @@ class UserDetailsController < ApplicationController
       return { success: false, error: error, observer_level: observer_level, observer_code: observer_code, observer_name: observer.employee_name }
     end
 
-    month_text = month.present? ? " #{short_month_label(month)}" : ""
-    message = "Emp-Code: #{employee_detail.employee_code}, Emp-Name: #{employee_detail.employee_name} has submitted his#{month_text} #{quarter} Qtr KRA MIS. Please review and approve in the system. Ploughman Agro Private Limited"
+    message = SmsNotificationService.submission_message(employee_detail.employee_name, quarter)
     result = SmsNotificationService.send_message(observer.mobile_number, message)
 
     if result[:success]

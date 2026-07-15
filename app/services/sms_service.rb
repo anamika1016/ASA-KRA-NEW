@@ -1,0 +1,2 @@
+class SmsService < SmsNotificationService
+end
