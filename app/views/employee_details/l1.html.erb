@@ -75,8 +75,8 @@
                     </td>
                     <td class="px-6 py-4 text-sm text-gray-700 border-r border-gray-200"><%= emp.l1_employer_name %></td>
                     <td class="px-6 py-4 text-sm text-center border-r border-gray-200">
-                      <span class="<%= data[:progress_value].present? ? 'inline-flex items-center px-3 py-1 rounded bg-emerald-50 text-emerald-700 font-semibold' : 'text-gray-400' %>">
-                        <%= data[:progress_value].present? ? "#{data[:progress]}%" : "-" %>
+                      <span class="<%= data[:progress_value].nil? ? 'text-gray-400' : 'inline-flex items-center px-3 py-1 rounded bg-emerald-50 text-emerald-700 font-semibold' %>">
+                        <%= data[:progress_value].nil? ? "-" : "#{data[:progress]}%" %>
                       </span>
                     </td>
                     <td class="px-6 py-4 text-sm border-r border-gray-200">

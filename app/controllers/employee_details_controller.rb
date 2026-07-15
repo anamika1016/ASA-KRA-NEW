@@ -2045,8 +2045,7 @@ end
       quarter_target_total += target_total
       quarter_achievement_total += achievement_total
 
-      month_progress_values = items.filter_map { |item| item[:progress_value] }
-      month_progress = average_review_percentage(month_progress_values)
+      month_progress = truncated_percentage(achievement_total, target_total)
 
       l1_percentages = items.filter_map { |item| item[:l1_percentage] == "-" ? nil : item[:l1_percentage].to_f }
       l2_percentages = items.filter_map { |item| item[:l2_percentage] == "-" ? nil : item[:l2_percentage].to_f }
@@ -2076,8 +2075,7 @@ end
     return nil if month_payloads.empty?
     return nil if require_ready && month_payloads.size != reviewable_months.size
 
-    quarter_progress_values = month_payloads.filter_map { |month_payload| month_payload[:progress_value]&.to_f }
-    quarter_percentage = average_review_percentage(quarter_progress_values)
+    quarter_percentage = truncated_percentage(quarter_achievement_total, quarter_target_total)
 
     {
       employee_name: employee_detail.employee_name,
@@ -2452,16 +2450,19 @@ end
 
           statuses = month_achievements.map { |achievement| achievement.status || "pending" }
           current_status = calculate_month_status(statuses, month_achievements, approval_level)
-          progress_values = details_with_month_data.filter_map do |detail|
+          target_total = 0.0
+          achievement_total = 0.0
+          details_with_month_data.each do |detail|
             target_number = review_target_number(detail, review_month)
             next unless target_number.positive?
 
             achievement = (achievements_by_detail_and_month.dig(detail.id, review_month) || []).find { |record| record.achievement.present? }
             next unless achievement
 
-            truncated_percentage(numeric_review_value(achievement.achievement), target_number)
+            target_total += target_number
+            achievement_total += numeric_review_value(achievement.achievement)
           end
-          progress_value = average_review_percentage(progress_values)
+          progress_value = truncated_percentage(achievement_total, target_total)
           key = [ emp.id, review_month, group_financial_year ].join("_")
 
           monthly_employee_data[key] = {
