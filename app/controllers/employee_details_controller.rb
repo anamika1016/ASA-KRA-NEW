@@ -2001,7 +2001,7 @@ end
       items = user_details.filter_map do |detail|
         next unless target_present_for_review_month?(detail, month)
 
-        target_number = numeric_review_value(detail.public_send(month))
+        target_number = review_target_number(detail, month)
         next unless target_number.positive?
 
         achievement = detail.achievements.find do |record|
@@ -2095,6 +2095,13 @@ end
 
   def numeric_review_value(value)
     value.to_s.delete(",").to_f
+  end
+
+  def review_target_number(detail, month)
+    target_number = numeric_review_value(detail.public_send(month))
+    return target_number unless detail.activity&.unit.to_s.strip == "%" && target_number == 1.0
+
+    100.0
   end
 
   def parse_pli_percentage(value)
@@ -2446,7 +2453,7 @@ end
           statuses = month_achievements.map { |achievement| achievement.status || "pending" }
           current_status = calculate_month_status(statuses, month_achievements, approval_level)
           progress_values = details_with_month_data.filter_map do |detail|
-            target_number = numeric_review_value(detail.public_send(review_month))
+            target_number = review_target_number(detail, review_month)
             next unless target_number.positive?
 
             achievement = (achievements_by_detail_and_month.dig(detail.id, review_month) || []).find { |record| record.achievement.present? }
