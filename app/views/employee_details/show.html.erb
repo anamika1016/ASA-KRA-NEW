@@ -174,7 +174,7 @@
                           achievement_record&.achievement_remark&.public_send("#{obs_level}_remarks")
                         end
                         l2_manager_remarks = achievement_record&.achievement_remark&.l2_remarks
-                        target_number = target_is_numeric ? target_text.to_f : 0.0
+                        target_number = target_text.to_f
                         achievement_number = achievement_value.to_s.delete(",").to_f
                         progress_percentage = has_target && target_number.positive? && achievement_value.present? ? (((achievement_number / target_number) * 100.0 * 100).floor / 100.0) : nil
                         if has_target && target_number.positive?
@@ -325,6 +325,7 @@
       review_progress_percentage = ((review_progress_sum / review_progress_count) * 100).floor / 100.0
     end
   end
+  review_progress_percentage = @calculated_review_progress_percentage if @calculated_review_progress_percentage.present?
 %>
 
 <!-- FIXED: Single Overall Status Display for Quarter -->

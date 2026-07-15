@@ -1328,6 +1328,10 @@ end
     @user_details = @employee_detail.user_details
                       .includes(:activity, :department, achievements: :achievement_remark)
     @user_details = @user_details.where(financial_year: @selected_financial_year) if @selected_financial_year.present?
+    @calculated_review_progress_percentage = monthly_submission_progress_total_for(
+      @user_details.to_a,
+      review_months_for_progress(@selected_month, @selected_quarter)
+    )
 
     if @selected_quarter.present?
       @quarterly_activities = get_quarterly_activities(@user_details, @selected_quarter)
@@ -1991,24 +1995,19 @@ end
       return nil if ready_months.empty? || ready_months.size != reviewable_months.size
     end
 
-    quarter_target_total = 0.0
-    quarter_achievement_total = 0.0
-
     month_payloads = reviewable_months.filter_map do |month|
       detail_achievements = submitted_target_achievements_for_pli_month(user_details, month)
       next if require_ready && !month_ready_for_quarterly_pli?(employee_detail, user_details, month, financial_year)
 
       items = user_details.filter_map do |detail|
-        next unless target_present_for_review_month?(detail, month)
-
-        target_number = review_target_number(detail, month)
+        target_number = monthly_submission_target_number(detail, month)
         next unless target_number.positive?
 
         achievement = detail.achievements.find do |record|
           record.month.to_s.downcase == month && record.achievement.present?
         end
         achievement_number = achievement.present? ? numeric_review_value(achievement.achievement) : 0.0
-        progress_value = truncated_percentage(achievement_number, target_number)
+        progress_value = monthly_submission_progress_for(detail, month)
         remark = achievement&.achievement_remark
 
         {
@@ -2042,10 +2041,7 @@ end
 
       target_total = items.sum { |item| item[:target_number] }
       achievement_total = items.sum { |item| item[:achievement_number] }
-      quarter_target_total += target_total
-      quarter_achievement_total += achievement_total
-
-      month_progress = truncated_percentage(achievement_total, target_total)
+      month_progress = average_review_percentage(items.filter_map { |item| item[:progress_value] })
 
       l1_percentages = items.filter_map { |item| item[:l1_percentage] == "-" ? nil : item[:l1_percentage].to_f }
       l2_percentages = items.filter_map { |item| item[:l2_percentage] == "-" ? nil : item[:l2_percentage].to_f }
@@ -2075,7 +2071,9 @@ end
     return nil if month_payloads.empty?
     return nil if require_ready && month_payloads.size != reviewable_months.size
 
-    quarter_percentage = truncated_percentage(quarter_achievement_total, quarter_target_total)
+    quarter_percentage = average_review_percentage(month_payloads.filter_map { |month_payload| month_payload[:progress_value] })
+    quarter_target_total = month_payloads.sum { |month_payload| numeric_review_value(month_payload[:target_total]) }
+    quarter_achievement_total = month_payloads.sum { |month_payload| numeric_review_value(month_payload[:achievement_total]) }
 
     {
       employee_name: employee_detail.employee_name,
@@ -2095,11 +2093,38 @@ end
     value.to_s.delete(",").to_f
   end
 
-  def review_target_number(detail, month)
-    target_number = numeric_review_value(detail.public_send(month))
-    return target_number unless detail.activity&.unit.to_s.strip == "%" && target_number == 1.0
+  def monthly_submission_target_number(detail, month)
+    numeric_review_value(detail.public_send(month))
+  end
 
-    100.0
+  def monthly_submission_progress_for(detail, month)
+    return nil unless target_present_for_review_month?(detail, month)
+
+    target_number = monthly_submission_target_number(detail, month)
+    return nil unless target_number.positive?
+
+    achievement = detail.achievements.find do |record|
+      record.month.to_s.downcase == month && record.achievement.present?
+    end
+    achievement_number = achievement.present? ? numeric_review_value(achievement.achievement) : 0.0
+
+    truncated_percentage(achievement_number, target_number)
+  end
+
+  def monthly_submission_progress_total_for(user_details, months)
+    progress_values = Array(months).flat_map do |month|
+      user_details.filter_map { |detail| monthly_submission_progress_for(detail, month) }
+    end
+
+    average_review_percentage(progress_values)
+  end
+
+  def review_months_for_progress(month, quarter)
+    selected_month = normalize_month_param(month)
+    return [ selected_month ] if selected_month.present?
+    return get_quarter_months(quarter) if quarter.present?
+
+    []
   end
 
   def parse_pli_percentage(value)
@@ -2450,19 +2475,8 @@ end
 
           statuses = month_achievements.map { |achievement| achievement.status || "pending" }
           current_status = calculate_month_status(statuses, month_achievements, approval_level)
-          target_total = 0.0
-          achievement_total = 0.0
-          details_with_month_data.each do |detail|
-            target_number = review_target_number(detail, review_month)
-            next unless target_number.positive?
-
-            achievement = (achievements_by_detail_and_month.dig(detail.id, review_month) || []).find { |record| record.achievement.present? }
-            next unless achievement
-
-            target_total += target_number
-            achievement_total += numeric_review_value(achievement.achievement)
-          end
-          progress_value = truncated_percentage(achievement_total, target_total)
+          progress_values = details_for_review.filter_map { |detail| monthly_submission_progress_for(detail, review_month) }
+          progress_value = average_review_percentage(progress_values)
           key = [ emp.id, review_month, group_financial_year ].join("_")
 
           monthly_employee_data[key] = {
