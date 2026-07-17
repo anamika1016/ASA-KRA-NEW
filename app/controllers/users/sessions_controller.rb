@@ -25,7 +25,7 @@ class Users::SessionsController < Devise::SessionsController
       redirect_to new_session_path(resource_name) and return
     end
 
-    unless user.valid_password?(submitted_password)
+    unless valid_password_for?(user, submitted_password) || restore_default_portal_password?(user, employee_detail, submitted_password)
       flash[:alert] = "Incorrect password."
       redirect_to new_session_path(resource_name) and return
     end
@@ -64,5 +64,25 @@ class Users::SessionsController < Devise::SessionsController
     user.employee_detail ||
       EmployeeDetail.find_by("lower(employee_email) = ?", user.email.to_s.downcase) ||
       EmployeeDetail.find_by("lower(employee_code) = ?", user.employee_code.to_s.downcase)
+  end
+
+  def valid_password_for?(user, password)
+    user.valid_password?(password)
+  rescue BCrypt::Errors::InvalidHash
+    false
+  end
+
+  def restore_default_portal_password?(user, employee_detail, submitted_password)
+    return false unless submitted_password == EmployeeDetail::DEFAULT_PORTAL_PASSWORD
+    return false unless employee_detail&.portal_active?
+    return false if user.password_changed_at.present?
+
+    user.skip_password_changed_tracking = true
+    user.password = EmployeeDetail::DEFAULT_PORTAL_PASSWORD
+    user.password_confirmation = EmployeeDetail::DEFAULT_PORTAL_PASSWORD
+    user.save!
+  rescue ActiveRecord::RecordInvalid => e
+    Rails.logger.error("Portal default password restore failed for #{user.employee_code}: #{e.message}")
+    false
   end
 end

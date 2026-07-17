@@ -218,7 +218,7 @@
                       <%= visible_detail_index %>
                     </td>
                     <td class="kri-cell px-4 py-3 text-sm text-gray-800 border-r border-gray-200">
-                      <%= detail.activity&.activity_name || 'N/A' %>
+                      <%= activity_name_display(detail.activity) %>
                     </td>
                     <td class="unit-cell px-4 py-3 text-sm text-gray-800 border-r border-gray-200 text-center">
                       <%= detail.activity&.unit || '' %>

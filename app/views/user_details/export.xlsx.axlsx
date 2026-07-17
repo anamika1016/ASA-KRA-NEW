@@ -27,7 +27,7 @@ wb.add_worksheet(name: "Key result indicators") do |sheet|
       ud.employee_detail&.obs_code2,
       ud.employee_detail&.obs_code3,
       ud.employee_detail&.obs_code4,
-      ud.activity&.activity_name,
+      activity_name_display(ud.activity),
       ud.activity&.unit,
       annual_target_display(ud.activity),
       target_display_value(ud.try(:april)),

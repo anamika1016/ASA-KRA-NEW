@@ -1,7 +1,6 @@
 class EmployeeDetail < ApplicationRecord
   DEFAULT_PORTAL_PASSWORD = "123456".freeze
   DEFAULT_PORTAL_ROLE = "employee".freeze
-
   has_many :user_details, dependent: :destroy
   has_many :target_submissions, dependent: :destroy
   has_many :sms_logs, dependent: :destroy
@@ -83,8 +82,11 @@ scope :l1_pending_records, -> { where(status: [ "pending", "returned" ]) }
       account.email = normalized_email
       account.employee_code = normalized_code
       account.role = DEFAULT_PORTAL_ROLE if account.role.blank?
-      account.password = DEFAULT_PORTAL_PASSWORD if account.encrypted_password.blank?
-      account.password_confirmation = DEFAULT_PORTAL_PASSWORD if account.encrypted_password.blank?
+      if account.encrypted_password.blank?
+        account.skip_password_changed_tracking = true
+        account.password = DEFAULT_PORTAL_PASSWORD
+        account.password_confirmation = DEFAULT_PORTAL_PASSWORD
+      end
       account.save! if account.changed?
     else
       account = User.create!(
@@ -113,14 +115,15 @@ scope :l1_pending_records, -> { where(status: [ "pending", "returned" ]) }
   end
 
   def matching_portal_user(normalized_email, normalized_code)
+    # Login is employee-code based, so the exact code account must win when an
+    # old/duplicate email account is linked to this EmployeeDetail row.
+    code_account = User.find_by("lower(employee_code) = ?", normalized_code.downcase)
+    return code_account if code_account.present?
+
     linked_user = user
+    return linked_user if linked_user.present? && linked_user_matches?(linked_user, normalized_email, normalized_code)
 
-    if linked_user.present? && linked_user_matches?(linked_user, normalized_email, normalized_code)
-      return linked_user
-    end
-
-    User.find_by("lower(email) = ?", normalized_email) ||
-      User.find_by("lower(employee_code) = ?", normalized_code.downcase)
+    User.find_by("lower(email) = ?", normalized_email)
   end
 
   def linked_user_matches?(linked_user, normalized_email, normalized_code)

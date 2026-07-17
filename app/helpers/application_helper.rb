@@ -73,11 +73,17 @@ module ApplicationHelper
   def clean_spreadsheet_display_value(value)
     return nil if value.nil?
 
-    cleaned_value = value.to_s.strip
+    cleaned_value = Activity.clean_spreadsheet_markup(value)
     return nil if cleaned_value.blank?
     return nil if SPREADSHEET_ERROR_VALUES.include?(cleaned_value.upcase)
 
     cleaned_value
+  end
+
+  def activity_name_display(activity_or_name)
+    value = activity_or_name.respond_to?(:activity_name) ? activity_or_name.activity_name : activity_or_name
+
+    clean_spreadsheet_display_value(value).presence || "N/A"
   end
 
   def target_display_value(value)
@@ -151,6 +157,9 @@ module ApplicationHelper
     return true if user.admin? || user.hod?
     return false unless OBSERVER_LEVELS.include?(observer_level.to_s)
 
+    menu_key = "observer_#{OBSERVER_LEVELS.index(observer_level.to_s) + 1}"
+    return false unless menu_access_enabled?(menu_key, user)
+
     code = resolved_observer_identity_code(user)
     return false if code.blank?
 
@@ -176,6 +185,10 @@ module ApplicationHelper
     return observer_levels_for_user(current_user).any? if observer_level.blank?
 
     observer_level_assigned_to_user?(observer_level, current_user)
+  end
+
+  def sidebar_menu_active?(menu_key)
+    SidebarMenuSetting.active_for?(menu_key)
   end
 
   def observer_menu_active?(observer_level)

@@ -126,4 +126,107 @@
       </div>
     </section>
   </div>
+
+  <div class="login-signup-modal" id="signupConfirmModal" hidden>
+    <div class="login-signup-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="signupConfirmTitle">
+      <h3 id="signupConfirmTitle" class="login-signup-modal__title">Continue to sign up?</h3>
+      <p class="login-signup-modal__text">You are about to open the employee registration page.</p>
+      <div class="login-signup-modal__actions">
+        <button type="button" class="login-signup-modal__btn login-signup-modal__btn--ghost" id="signupConfirmCancelBtn">Cancel</button>
+        <button type="button" class="login-signup-modal__btn login-signup-modal__btn--primary" id="signupConfirmBtn">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="login-signup-modal" id="signupFinalModal" hidden>
+    <div class="login-signup-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="signupFinalTitle">
+      <h3 id="signupFinalTitle" class="login-signup-modal__title">Before you continue</h3>
+      <p class="login-signup-modal__text">
+        Employees already present in Employee List do not need to sign up manually. Their login account is created automatically with default password <strong>123456</strong>.
+      </p>
+      <div class="login-signup-modal__actions">
+        <%= link_to "OK", new_registration_path(resource_name), class: "login-signup-modal__btn login-signup-modal__btn--primary", id: "signupFinalOkBtn" %>
+      </div>
+    </div>
+  </div>
 </div>
+
+<style nonce="<%= content_security_policy_nonce %>">
+  .login-signup-modal[hidden] { display: none !important; }
+  .login-signup-modal:not([hidden]) {
+    position: fixed; inset: 0; z-index: 9999; display: flex !important;
+    align-items: flex-start; justify-content: center; padding: 2rem 1.5rem 1.5rem;
+    background: rgba(16, 33, 54, 0.48);
+  }
+  .login-signup-modal__dialog {
+    width: min(100%, 26rem); padding: 1.5rem; border-radius: 1.25rem;
+    border: 1px solid #d7dfeb; background: #fff;
+    box-shadow: 0 24px 60px rgba(16, 33, 54, 0.2);
+  }
+  .login-signup-modal__title {
+    margin: 0 0 .75rem; color: #102136; font-size: 1.25rem; font-weight: 700;
+  }
+  .login-signup-modal__text {
+    margin: 0; color: #64748b; font-size: .95rem; line-height: 1.55;
+  }
+  .login-signup-modal__actions {
+    display: flex; justify-content: flex-end; gap: .75rem; margin-top: 1.25rem;
+  }
+  .login-signup-modal__btn {
+    min-width: 6rem; padding: .7rem 1rem; border: 1px solid transparent;
+    border-radius: 999px; font-size: .92rem; font-weight: 600;
+    text-align: center; text-decoration: none; cursor: pointer;
+  }
+  .login-signup-modal__btn--ghost {
+    border-color: #d7dfeb; background: #fff; color: #64748b;
+  }
+  .login-signup-modal__btn--primary {
+    background: #176b43; color: #fff;
+  }
+  .signup-dot-btn__dots { display: inline-flex; align-items: center; gap: .2rem; }
+  .signup-dot-btn__dots span {
+    display: block; width: .38rem; height: .38rem;
+    border-radius: 999px; background: #6b7280;
+  }
+</style>
+
+<script nonce="<%= content_security_policy_nonce %>">
+  (function () {
+    function initializeSignupPopups() {
+      const dot = document.getElementById("signupDotBtn");
+      const firstPopup = document.getElementById("signupConfirmModal");
+      const secondPopup = document.getElementById("signupFinalModal");
+      const cancel = document.getElementById("signupConfirmCancelBtn");
+      const confirm = document.getElementById("signupConfirmBtn");
+      if (!dot || !firstPopup || !secondPopup || dot.dataset.ready === "true") return;
+
+      dot.dataset.ready = "true";
+      const closeAll = function () {
+        firstPopup.hidden = true;
+        secondPopup.hidden = true;
+        document.body.classList.remove("login-modal-open");
+      };
+
+      dot.addEventListener("click", function () {
+        firstPopup.hidden = false;
+        secondPopup.hidden = true;
+        document.body.classList.add("login-modal-open");
+      });
+      cancel.addEventListener("click", closeAll);
+      confirm.addEventListener("click", function () {
+        firstPopup.hidden = true;
+        secondPopup.hidden = false;
+      });
+      firstPopup.addEventListener("click", function (event) {
+        if (event.target === firstPopup) closeAll();
+      });
+      secondPopup.addEventListener("click", function (event) {
+        if (event.target === secondPopup) closeAll();
+      });
+    }
+
+    document.addEventListener("turbo:load", initializeSignupPopups);
+    document.addEventListener("DOMContentLoaded", initializeSignupPopups);
+    initializeSignupPopups();
+  })();
+</script>

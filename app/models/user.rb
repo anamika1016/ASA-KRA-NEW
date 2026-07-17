@@ -1,4 +1,6 @@
 class User < ApplicationRecord
+  attr_accessor :skip_password_changed_tracking
+
   # Devise modules for authentication
   devise :database_authenticatable, :registerable,
          :recoverable, :rememberable, :validatable
@@ -12,12 +14,20 @@ class User < ApplicationRecord
   has_many :user_training_progresses, dependent: :destroy
 
   ROLES = %w[employee hod admin l1_employer l2_employer]
+  LOGIN_ROLES = %w[employee hod].freeze
 
   # Auto-strip employee_code before save
   before_validation :sanitize_employee_code
+  before_save :track_password_change, if: :will_save_change_to_encrypted_password?
 
   def sanitize_employee_code
     self.employee_code = employee_code.strip if employee_code.present?
+  end
+
+  def track_password_change
+    return if new_record? || skip_password_changed_tracking
+
+    self.password_changed_at ||= Time.current
   end
 
   # Role helpers

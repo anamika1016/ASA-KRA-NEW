@@ -33,6 +33,7 @@ class UserDetailsController < ApplicationController
     scope = target_details_scope
 
     @user_details = scope.page(params[:page]).per(100).load
+    @target_reviewer_badges = target_reviewer_badges(@user_details)
   end
 
   def new
@@ -1726,6 +1727,7 @@ class UserDetailsController < ApplicationController
       value.to_s.strip
     end
 
+    cleaned_value = Activity.clean_spreadsheet_markup(cleaned_value)
     return nil if cleaned_value.blank?
     return nil if spreadsheet_error_value?(cleaned_value)
 
@@ -2331,5 +2333,56 @@ class UserDetailsController < ApplicationController
         employee.present? && employee.public_send(observer_level).to_s.strip.present?
       end
     end
+  end
+
+  def target_reviewer_badges(user_details)
+    employees = Array(user_details).map(&:employee_detail).compact.uniq(&:id)
+    return [] if employees.empty?
+
+    reviewer_names_by_code = reviewer_names_by_code_for(employees)
+    badges = []
+
+    ApplicationHelper::OBSERVER_LEVELS.each_with_index do |observer_level, index|
+      observer_values = employees.filter_map do |employee|
+        reviewer_name_for(employee.public_send(observer_level), nil, reviewer_names_by_code)
+      end
+      badges << { label: "OB#{index + 1} Name", value: summarized_reviewer_value(observer_values) } if observer_values.any?
+    end
+
+    l1_values = employees.filter_map do |employee|
+      reviewer_name_for(employee.l1_code, employee.l1_employer_name, reviewer_names_by_code)
+    end
+    badges << { label: "L1 Name", value: summarized_reviewer_value(l1_values) } if l1_values.any?
+
+    badges
+  end
+
+  def reviewer_names_by_code_for(employees)
+    reviewer_codes = employees.flat_map do |employee|
+      [ employee.l1_code, *ApplicationHelper::OBSERVER_LEVELS.map { |observer_level| employee.public_send(observer_level) } ]
+    end.map { |code| code.to_s.strip }.compact_blank.uniq
+
+    return {} if reviewer_codes.empty?
+
+    EmployeeDetail
+      .where("LOWER(TRIM(employee_code)) IN (?)", reviewer_codes.map(&:downcase))
+      .pluck(:employee_code, :employee_name)
+      .each_with_object({}) do |(code, name), names_by_code|
+        names_by_code[code.to_s.strip.downcase] = name
+      end
+  end
+
+  def reviewer_name_for(code, fallback_name, reviewer_names_by_code)
+    normalized_code = code.to_s.strip
+    fallback_name.to_s.strip.presence ||
+      reviewer_names_by_code[normalized_code.downcase].to_s.strip.presence ||
+      normalized_code.presence
+  end
+
+  def summarized_reviewer_value(values)
+    unique_values = values.map { |value| value.to_s.strip }.compact_blank.uniq
+    return "" if unique_values.empty?
+
+    unique_values.one? ? unique_values.first : "#{unique_values.first} +#{unique_values.size - 1}"
   end
 end

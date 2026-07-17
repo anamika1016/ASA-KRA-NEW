@@ -4,14 +4,15 @@ require "securerandom"
 require "set"
 
 class EmployeeDetailsController < ApplicationController
-  before_action :set_employee_detail, only: [ :edit, :update, :destroy, :toggle_portal_status ]
-  load_and_authorize_resource except: [ :approve, :return, :l2_approve, :l2_return, :edit_l1, :edit_l2, :toggle_portal_status, :bulk_update_portal_status, :bulk_destroy, :quarterly_pli, :export_quarterly_pli_xlsx, :quarterly_pli_detail, :save_quarterly_pli, :observer_1, :observer_2, :observer_3, :observer_4, :observer_pli_detail, :save_observer_pli ]
+  before_action :set_employee_detail, only: [ :edit, :update, :destroy, :toggle_portal_status, :update_portal_role ]
+  load_and_authorize_resource except: [ :approve, :return, :l2_approve, :l2_return, :edit_l1, :edit_l2, :toggle_portal_status, :update_portal_role, :toggle_sidebar_menu, :bulk_update_portal_status, :bulk_destroy, :quarterly_pli, :export_quarterly_pli_xlsx, :quarterly_pli_detail, :save_quarterly_pli, :observer_1, :observer_2, :observer_3, :observer_4, :observer_pli_detail, :save_observer_pli ]
 
   def index
     @employee_detail = EmployeeDetail.new
     @q = EmployeeDetail.ransack(params[:q])
-    @employee_details = @q.result.order(Arel.sql("LOWER(employee_name) ASC")).page(params[:page]).per(10)
+    @employee_details = @q.result.includes(:user).order(Arel.sql("LOWER(employee_name) ASC")).page(params[:page]).per(10)
     load_observer_names_for_employee_list
+    load_portal_accounts_for_employee_list
   end
 
   def create
@@ -21,8 +22,9 @@ class EmployeeDetailsController < ApplicationController
     if @employee_detail.save
       redirect_to employee_details_path, notice: "Employee created successfully."
     else
-      @employee_details = @q.result.order(Arel.sql("LOWER(employee_name) ASC")).page(params[:page]).per(10)
+      @employee_details = @q.result.includes(:user).order(Arel.sql("LOWER(employee_name) ASC")).page(params[:page]).per(10)
       load_observer_names_for_employee_list
+      load_portal_accounts_for_employee_list
       flash.now[:alert] = "Failed to create employee."
       render :index, status: :unprocessable_entity
     end
@@ -64,6 +66,54 @@ class EmployeeDetailsController < ApplicationController
     @employee_detail.update!(portal_active: !@employee_detail.portal_active?)
     redirect_to employee_details_path(anchor: "employee-list"),
                 notice: "#{@employee_detail.employee_name} marked #{@employee_detail.portal_status_label}."
+  end
+
+  def update_portal_role
+    authorize! :manage, EmployeeDetail
+
+    role = params[:role].to_s
+    unless User::LOGIN_ROLES.include?(role)
+      redirect_to employee_details_path(anchor: "employee-list"), alert: "Please select Employee or HOD role."
+      return
+    end
+
+    employee_code = @employee_detail.employee_code.to_s.strip.downcase
+    accounts = employee_code.present? ? User.where("lower(employee_code) = ?", employee_code) : User.none
+    accounts_found = accounts.exists?
+
+    if accounts_found
+      accounts.update_all(role: role, updated_at: Time.current)
+    else
+      account = @employee_detail.ensure_portal_user!
+      account&.update!(role: role)
+    end
+
+    unless accounts_found || account
+      redirect_to employee_details_path(anchor: "employee-list"), alert: "Employee email and employee code are required before assigning a login role."
+      return
+    end
+
+    redirect_to employee_details_path(anchor: "employee-list"),
+                notice: "#{@employee_detail.employee_name} login role updated to #{role == 'hod' ? 'HOD' : 'Employee'}."
+  rescue ActiveRecord::RecordInvalid => e
+    Rails.logger.error "Employee role update failed: #{e.message}"
+    redirect_to employee_details_path(anchor: "employee-list"), alert: "Failed to update employee login role."
+  end
+
+  def toggle_sidebar_menu
+    authorize! :manage, EmployeeDetail
+
+    menu_key = params[:menu].to_s
+    unless SidebarMenuSetting::MENU_KEYS.include?(menu_key)
+      redirect_back fallback_location: root_path, alert: "Invalid sidebar menu."
+      return
+    end
+
+    setting = SidebarMenuSetting.toggle!(menu_key)
+    redirect_back fallback_location: root_path, notice: "Sidebar menu marked #{setting.active? ? 'Active' : 'Inactive'}."
+  rescue ActiveRecord::RecordInvalid => e
+    Rails.logger.error "Sidebar menu update failed: #{e.message}"
+    redirect_back fallback_location: root_path, alert: "Failed to update sidebar menu."
   end
 
   def bulk_update_portal_status
@@ -389,6 +439,11 @@ class EmployeeDetailsController < ApplicationController
   # L1 Dashboard - Show quarterly data
   def l1
     authorize! :l1, EmployeeDetail
+
+    unless has_l1_responsibilities?
+      redirect_to root_path, alert: "L1 Employee Details menu is inactive for your login."
+      return
+    end
 
     if current_user.hod?
       # PERFORMANCE FIX: Optimize includes to preload all necessary associations
@@ -1237,6 +1292,14 @@ end
     @observer_names_by_code = observer_names_by_code_for(@employee_details)
   end
 
+  def load_portal_accounts_for_employee_list
+    @portal_accounts_by_employee_id = Array(@employee_details).index_with do |employee|
+      code = employee.employee_code.to_s.strip.downcase
+      code_account = User.find_by("lower(employee_code) = ?", code) if code.present?
+      code_account || employee.user
+    end
+  end
+
   def observer_names_by_code_for(employee_details)
     observer_codes = Array(employee_details).flat_map do |employee|
       ApplicationHelper::OBSERVER_LEVELS.map { |observer_level| employee.public_send(observer_level).to_s.strip }
@@ -1615,29 +1678,24 @@ end
   end
 
   def quarterly_pli_authorized?
-    current_user.hod? ||
-      current_user.admin? ||
-      EmployeeDetail.where(
-        "LOWER(TRIM(COALESCE(l1_code, ''))) = ? OR LOWER(TRIM(COALESCE(l1_employer_name, ''))) = ?",
-        current_user.employee_code.to_s.strip.downcase,
-        current_user.email.to_s.strip.downcase
-      ).exists? ||
-      EmployeeDetail.where(
-        "LOWER(TRIM(COALESCE(l2_code, ''))) = ? OR LOWER(TRIM(COALESCE(l2_employer_name, ''))) = ?",
-        current_user.employee_code.to_s.strip.downcase,
-        current_user.email.to_s.strip.downcase
-      ).exists?
+    return true if current_user.hod? || current_user.admin?
+    return false unless menu_access_enabled?(:quarterly_pli)
+
+    code = current_user.employee_code.to_s.strip.downcase
+    code.present? && EmployeeDetail.where(
+      "LOWER(TRIM(COALESCE(l1_code, ''))) = ?",
+      code
+    ).exists?
   end
 
   def quarterly_pli_employee_scope
     scope = EmployeeDetail.order(Arel.sql("LOWER(employee_name) ASC"))
     return scope if current_user.hod? || current_user.admin?
 
-    scope.where(
-      "LOWER(TRIM(COALESCE(l1_code, ''))) = :code OR LOWER(TRIM(COALESCE(l1_employer_name, ''))) = :email OR LOWER(TRIM(COALESCE(l2_code, ''))) = :code OR LOWER(TRIM(COALESCE(l2_employer_name, ''))) = :email",
-      code: current_user.employee_code.to_s.strip.downcase,
-      email: current_user.email.to_s.strip.downcase
-    )
+    code = current_user.employee_code.to_s.strip.downcase
+    return scope.none if code.blank? || !menu_access_enabled?(:quarterly_pli)
+
+    scope.where("LOWER(TRIM(COALESCE(l1_code, ''))) = ?", code)
   end
 
   def build_observer_pli_index(observer_level)
@@ -2164,8 +2222,10 @@ end
     email = current_user.email.to_s.strip.downcase
 
     current_user.hod? ||
-    code == employee_detail.l1_code.to_s.strip.downcase ||
-    email == employee_detail.l1_employer_name.to_s.strip.downcase
+    (menu_access_enabled?(:l1) && (
+      code == employee_detail.l1_code.to_s.strip.downcase ||
+      email == employee_detail.l1_employer_name.to_s.strip.downcase
+    ))
   end
 
   def can_act_as_l2?(employee_detail)

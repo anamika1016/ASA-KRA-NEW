@@ -92,6 +92,11 @@
       overflow: visible !important;
     }
 
+    #hs-application-sidebar nav li.sidebar-menu-with-toggle {
+      display: flex !important;
+      align-items: center;
+    }
+
     .sidebar-pending-dot {
       display: inline-block;
       width: 0.55rem;
@@ -100,6 +105,27 @@
       background-color: #ef4444;
       box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
       flex-shrink: 0;
+    }
+
+    .sidebar-access-dot {
+      display: inline-block;
+      width: 0.55rem;
+      height: 0.55rem;
+      margin-left: 0.25rem;
+      border: 1px solid #16a34a;
+      border-radius: 9999px;
+      background-color: #22c55e;
+      box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
+      vertical-align: middle;
+      flex-shrink: 0;
+      padding: 0;
+      cursor: pointer;
+    }
+
+    .sidebar-access-dot--inactive {
+      background-color: #9ca3af;
+      border-color: #6b7280;
+      box-shadow: none;
     }
   </style>
 </head>
@@ -239,7 +265,8 @@
           <% if has_observer_pli_responsibilities? %>
             <% observer_levels_for_current_user.each do |observer_level| %>
               <% observer_index_path = observer_pli_index_path(observer_level) %>
-              <li class="hs-accordion" id="users-accordion">
+              <% observer_menu_key = "observer_#{ApplicationHelper::OBSERVER_LEVELS.index(observer_level) + 1}" %>
+              <li class="hs-accordion sidebar-menu-with-toggle" id="users-accordion">
                 <%= link_to observer_index_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if observer_menu_active?(observer_level)} text-base text-gray-800 rounded-lg" do %>
                   <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
                     <path d="M4.5 12s2.8-5.5 7.5-5.5 7.5 5.5 7.5 5.5-2.8 5.5-7.5 5.5S4.5 12 4.5 12Z" />
@@ -253,12 +280,21 @@
                     <% end %>
                   </span>
                 <% end %>
+                <% if current_user.hod? || current_user.admin? %>
+                  <%= button_to toggle_sidebar_menu_employee_details_path(menu: observer_menu_key), method: :patch,
+                      form: { class: "inline-flex", data: { turbo_confirm: "#{observer_menu_title_for(observer_level)} ko #{sidebar_menu_active?(observer_menu_key) ? 'Inactive' : 'Active'} karna hai?" } },
+                      class: "sidebar-access-dot #{'sidebar-access-dot--inactive' unless sidebar_menu_active?(observer_menu_key)}",
+                      title: "#{sidebar_menu_active?(observer_menu_key) ? 'Active' : 'Inactive'} - click to change",
+                      aria: { label: "Toggle #{observer_menu_title_for(observer_level)}" } do %>
+                    <span class="sr-only">Toggle <%= observer_menu_title_for(observer_level) %></span>
+                  <% end %>
+                <% end %>
               </li>
             <% end %>
           <% end %>
 
           <% if has_l1_responsibilities? %>
-            <li class="hs-accordion" id="users-accordion">
+            <li class="hs-accordion sidebar-menu-with-toggle" id="users-accordion">
               <%= link_to l1_employee_details_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(l1_employee_details_path)} text-base text-gray-800 rounded-lg" do %>
                 <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
                   <path d="M12 4.5 14.3 9l4.9.7-3.5 3.4.8 4.9-4.5-2.4-4.5 2.4.8-4.9-3.5-3.4 4.9-.7Z" />
@@ -272,11 +308,19 @@
                   <% end %>
                 </span>
               <% end %>
+              <% if current_user.hod? || current_user.admin? %>
+                <%= button_to toggle_sidebar_menu_employee_details_path(menu: "l1"), method: :patch,
+                    form: { class: "inline-flex", data: { turbo_confirm: "L1 Employee Details ko #{sidebar_menu_active?('l1') ? 'Inactive' : 'Active'} karna hai?" } },
+                    class: "sidebar-access-dot #{'sidebar-access-dot--inactive' unless sidebar_menu_active?('l1')}",
+                    title: "#{sidebar_menu_active?('l1') ? 'Active' : 'Inactive'} - click to change", aria: { label: "Toggle L1 Employee Details" } do %>
+                  <span class="sr-only">Toggle L1 Employee Details</span>
+                <% end %>
+              <% end %>
             </li>
           <% end %>
 
           <% if has_quarterly_pli_responsibilities? %>
-            <li class="hs-accordion" id="users-accordion">
+            <li class="hs-accordion sidebar-menu-with-toggle" id="users-accordion">
               <%= link_to quarterly_pli_employee_details_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(quarterly_pli_employee_details_path)} text-base text-gray-800 rounded-lg" do %>
                 <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
                   <path d="M4.5 19.5h15" />
@@ -291,6 +335,14 @@
                     <span class="sidebar-pending-dot" title="Pending Quarterly PLI reviews" aria-label="Pending Quarterly PLI reviews"></span>
                   <% end %>
                 </span>
+              <% end %>
+              <% if current_user.hod? || current_user.admin? %>
+                <%= button_to toggle_sidebar_menu_employee_details_path(menu: "quarterly_pli"), method: :patch,
+                    form: { class: "inline-flex", data: { turbo_confirm: "Quarterly PLI ko #{sidebar_menu_active?('quarterly_pli') ? 'Inactive' : 'Active'} karna hai?" } },
+                    class: "sidebar-access-dot #{'sidebar-access-dot--inactive' unless sidebar_menu_active?('quarterly_pli')}",
+                    title: "#{sidebar_menu_active?('quarterly_pli') ? 'Active' : 'Inactive'} - click to change", aria: { label: "Toggle Quarterly PLI" } do %>
+                  <span class="sr-only">Toggle Quarterly PLI</span>
+                <% end %>
               <% end %>
             </li>
           <% end %>

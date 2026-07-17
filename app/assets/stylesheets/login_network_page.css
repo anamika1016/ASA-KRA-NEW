@@ -752,6 +752,134 @@
   color: var(--login-accent-dark);
 }
 
+.signup-dot-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  margin: 0 10px 10px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.signup-dot-btn__dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.signup-dot-btn__dots span {
+  display: block;
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 999px;
+  background: #6b7280;
+  box-shadow: 0 0 0 1px rgba(107, 114, 128, 0.12);
+}
+
+.signup-dot-btn:hover .signup-dot-btn__dots span,
+.signup-dot-btn:focus-visible .signup-dot-btn__dots span {
+  background: #374151;
+}
+
+.signup-dot-btn:focus-visible {
+  outline: none;
+}
+
+.login-signup-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: none;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 2rem 1.5rem 1.5rem;
+  background: rgba(16, 33, 54, 0.42);
+}
+
+.login-signup-modal:not([hidden]) {
+  display: flex;
+}
+
+.login-signup-modal[hidden] {
+  display: none !important;
+}
+
+.login-signup-modal__dialog {
+  width: min(100%, 26rem);
+  padding: 1.5rem;
+  border-radius: 1.25rem;
+  border: 1px solid var(--login-border);
+  background: #ffffff;
+  box-shadow: 0 24px 60px rgba(16, 33, 54, 0.18);
+}
+
+.login-signup-modal__title {
+  margin: 0 0 0.75rem;
+  color: var(--login-text);
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.login-signup-modal__text {
+  margin: 0;
+  color: var(--login-muted);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.login-signup-modal__text strong {
+  color: var(--login-accent-dark);
+}
+
+.login-signup-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.login-signup-modal__btn {
+  min-width: 6rem;
+  padding: 0.7rem 1rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  text-decoration: none;
+}
+
+.login-signup-modal__btn--ghost {
+  border-color: #d7dfeb;
+  background: #ffffff;
+  color: var(--login-muted);
+}
+
+.login-signup-modal__btn--ghost:hover {
+  background: #f8fbff;
+  color: var(--login-text);
+}
+
+.login-signup-modal__btn--primary {
+  background: linear-gradient(135deg, var(--login-accent) 0%, var(--login-accent-dark) 100%);
+  color: #ffffff;
+}
+
+.login-signup-modal__btn--primary:hover {
+  filter: brightness(1.03);
+}
+
+body.login-modal-open {
+  overflow: hidden;
+}
+
 @keyframes loginAvatarFloat {
   0%,
   100% {

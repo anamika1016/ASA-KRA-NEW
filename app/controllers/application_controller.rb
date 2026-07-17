@@ -28,9 +28,18 @@ class ApplicationController < ActionController::Base
   end
 
   def portal_employee_detail_for(user)
-    user.employee_detail ||
-      EmployeeDetail.find_by("lower(employee_email) = ?", user.email.to_s.downcase) ||
-      EmployeeDetail.find_by("lower(employee_code) = ?", user.employee_code.to_s.downcase)
+    code = user.employee_code.to_s.strip.downcase
+    code_match = EmployeeDetail.find_by("lower(TRIM(employee_code)) = ?", code) if code.present?
+    code_match ||
+      user.employee_detail ||
+      EmployeeDetail.find_by("lower(TRIM(employee_email)) = ?", user.email.to_s.strip.downcase)
+  end
+
+  def menu_access_enabled?(menu_key, user = current_user)
+    return false if user.blank?
+    return true if user.hod? || user.admin?
+
+    SidebarMenuSetting.active_for?(menu_key)
   end
 
   def current_user_identity_code
@@ -43,6 +52,11 @@ class ApplicationController < ActionController::Base
 
   def has_l1_responsibilities?
     return true if current_user.hod? || current_user.admin?
+    menu_access_enabled?(:l1) && l1_assignment_exists?
+  end
+
+  def l1_assignment_exists?
+    return false unless current_user
 
     code = current_user_identity_code
     email = current_user_identity_email
@@ -70,7 +84,9 @@ class ApplicationController < ActionController::Base
   end
 
   def has_quarterly_pli_responsibilities?
-    has_l1_responsibilities?
+    return true if current_user.hod? || current_user.admin?
+
+    menu_access_enabled?(:quarterly_pli) && l1_assignment_exists?
   end
 
   def normalize_financial_year(value)
@@ -163,5 +179,5 @@ class ApplicationController < ActionController::Base
   end
 
   helper_method :has_l1_responsibilities?, :has_l2_responsibilities?, :has_quarterly_pli_responsibilities?,
-                :l1_pending_reviews_count, :l1_pending_reviews?
+                :l1_pending_reviews_count, :l1_pending_reviews?, :menu_access_enabled?
 end

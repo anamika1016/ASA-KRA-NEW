@@ -2,39 +2,46 @@
   <% if @user_details.any? %>
     <div class="bg-white border border-gray-200 rounded-xl shadow-lg mt-4">
       <div class="bg-gray-100 px-6 py-4 border-b border-gray-200 rounded-t-xl">
-        <div class="flex flex-wrap items-center justify-between gap-4">
-          <div>
+        <div class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-4">
             <h2 class="text-3xl font-bold text-gray-800 flex items-center">
               <i class="fas fa-users me-2 text-indigo-600"></i>
               Key result indicators - <%= @selected_financial_year %>
             </h2>
-            <%
-              department_names = @user_details.map { |detail| detail.department&.department_type }.compact_blank.uniq
-              employee_names = @user_details.map { |detail| detail.employee_detail&.employee_name }.compact_blank.uniq
-              department_label = department_names.one? ? department_names.first : "#{department_names.first || 'N/A'}#{department_names.size > 1 ? " +#{department_names.size - 1}" : ""}"
-              employee_label = employee_names.one? ? employee_names.first : "#{employee_names.first || 'N/A'}#{employee_names.size > 1 ? " +#{employee_names.size - 1}" : ""}"
-            %>
-            <div class="target-meta-row mt-3">
-              <span><strong>Department:</strong> <%= department_label %></span>
-              <span><strong>Employee name:</strong> <%= employee_label %></span>
+            <div class="flex flex-wrap items-center gap-3">
+              <%= form_with url: user_details_path, method: :get, local: true, class: "flex items-center gap-3" do |form| %>
+                <%= form.label :financial_year, "Financial year", class: "text-sm font-semibold text-gray-700" %>
+                <%= form.select :financial_year,
+                    options_for_select(@financial_years, @selected_financial_year),
+                    {},
+                    class: "bg-white border border-gray-300 rounded-lg px-4 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500",
+                    onchange: "this.form.submit();" %>
+              <% end %>
+
+              <%= link_to export_user_details_path(format: :xlsx, financial_year: @selected_financial_year),
+                  class: "inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold shadow-md transition duration-200" do %>
+                <i class="fas fa-file-excel"></i>
+                Export Excel
+              <% end %>
             </div>
           </div>
 
-          <div class="flex flex-wrap items-center gap-3">
-            <%= link_to export_user_details_path(format: :xlsx, financial_year: @selected_financial_year),
-                class: "inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold shadow-md transition duration-200" do %>
-              <i class="fas fa-file-excel"></i>
-              Export Excel
-            <% end %>
-
-            <%= form_with url: user_details_path, method: :get, local: true, class: "flex items-center gap-3" do |form| %>
-              <%= form.label :financial_year, "Financial year", class: "text-sm font-semibold text-gray-700" %>
-              <%= form.select :financial_year,
-                  options_for_select(@financial_years, @selected_financial_year),
-                  {},
-                  class: "bg-white border border-gray-300 rounded-lg px-4 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500",
-                  onchange: "this.form.submit();" %>
-            <% end %>
+          <div class="flex flex-wrap items-center justify-between gap-4">
+            <div class="min-w-0 flex-1">
+              <%
+                department_names = @user_details.map { |detail| detail.department&.department_type }.compact_blank.uniq
+                employee_names = @user_details.map { |detail| detail.employee_detail&.employee_name }.compact_blank.uniq
+                department_label = department_names.one? ? department_names.first : "#{department_names.first || 'N/A'}#{department_names.size > 1 ? " +#{department_names.size - 1}" : ""}"
+                employee_label = employee_names.one? ? employee_names.first : "#{employee_names.first || 'N/A'}#{employee_names.size > 1 ? " +#{employee_names.size - 1}" : ""}"
+              %>
+              <div class="target-meta-row">
+                <span><strong>Department:</strong> <%= department_label %></span>
+                <span><strong>Employee name:</strong> <%= employee_label %></span>
+                <% @target_reviewer_badges.each do |reviewer_badge| %>
+                  <span><strong><%= reviewer_badge[:label] %>:</strong> <%= reviewer_badge[:value] %></span>
+                <% end %>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -45,7 +52,7 @@
             <thead class="bg-gray-800">
               <tr>
                 <th class="px-5 py-4 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600">S.No</th>
-                <th class="px-5 py-4 text-left text-xs font-medium text-white tracking-wider border-r border-gray-600">Key result indicators</th>
+                <th class="kri-column px-5 py-4 text-left text-xs font-medium text-white tracking-wider border-r border-gray-600">Key result indicators</th>
                 <th class="px-5 py-4 text-left text-xs font-medium text-white tracking-wider border-r border-gray-600">Unit of measurement</th>
                 <th class="px-5 py-4 text-left text-xs font-medium text-white tracking-wider border-r border-gray-600"><%= annual_target_fy_label(@selected_financial_year) %></th>
                 <th class="px-5 py-4 text-center text-xs font-medium text-white tracking-wider border-r border-gray-600 bg-gray-700">APR</th>
@@ -66,7 +73,10 @@
               <% @user_details.each_with_index do |detail, index| %>
                 <tr class="<%= index.even? ? 'bg-gray-50' : 'bg-white' %> hover:bg-gray-100 transition-colors duration-200">
                   <td class="px-5 py-4 text-sm text-gray-800 border-r border-gray-200 text-center"><%= index + 1 %></td>
-                  <td class="px-5 py-4 text-sm text-gray-800 border-r border-gray-200"><%= detail.activity.activity_name %></td>
+                  <% kri_name = activity_name_display(detail.activity) %>
+                  <td class="kri-column px-5 py-4 text-sm text-gray-800 border-r border-gray-200" title="<%= kri_name %>">
+                    <span class="kri-text"><%= kri_name %></span>
+                  </td>
                   <td class="px-5 py-4 text-sm text-gray-800 border-r border-gray-200 text-center"><%= detail.activity.unit.present? ? detail.activity.unit : "" %></td>
                   <td class="px-5 py-4 text-sm text-gray-800 border-r border-gray-200 text-center"><%= annual_target_display(detail.activity) %></td>
                   <% %i[april may june july august september october november december january february march].each do |month| %>
@@ -172,6 +182,26 @@
   font-weight: 600;
   font-size: 0.75rem;
   letter-spacing: 0.05em;
+}
+
+.table th.kri-column,
+.table td.kri-column {
+  min-width: 32rem;
+  max-width: 44rem;
+  width: 40rem;
+  text-align: left;
+  white-space: normal;
+}
+
+.kri-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-height: 1.45;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-align: left;
+  word-break: break-word;
 }
 
 .table tbody tr:hover {

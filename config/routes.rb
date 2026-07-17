@@ -110,6 +110,7 @@ Rails.application.routes.draw do
       get :observer_3
       get :observer_4
       post :save_observer_pli
+      patch :toggle_sidebar_menu
     end
      member do
       get :quarterly_pli_detail
@@ -121,6 +122,7 @@ Rails.application.routes.draw do
       patch :edit_l1  # Edit L1 remarks and percentage
       patch :edit_l2  # Edit L2 remarks and percentage
       patch :toggle_portal_status
+      patch :update_portal_role
       get :show_l2  # This maps to /employee_details/:id/show_l2
     end
   end
