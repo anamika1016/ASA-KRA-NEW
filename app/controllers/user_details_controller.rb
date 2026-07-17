@@ -1404,10 +1404,23 @@ class UserDetailsController < ApplicationController
 
     spreadsheet.row(row_number).each_with_index.map do |cell_value, index|
       formatted_value = spreadsheet.formatted_value(row_number, index + 1)
-      normalize_import_display_value(formatted_value.presence || cell_value)
+      import_cell_value(cell_value, formatted_value)
     end
   rescue
     spreadsheet.row(row_number).map { |value| normalize_import_display_value(value) }
+  end
+
+  # Excel's display format may show 45.6 as 46. Preserve the raw numeric value
+  # while retaining formatted percentages, dates and leading-zero codes.
+  def import_cell_value(cell_value, formatted_value)
+    return normalize_import_display_value(cell_value) unless cell_value.is_a?(Numeric)
+
+    formatted = formatted_value.to_s.strip
+    use_formatted_value = formatted.end_with?("%") ||
+                          formatted.match?(/\A[+-]?0\d+(?:\.\d+)?\z/) ||
+                          !formatted.match?(/\A[+-]?[\d,]+(?:\.\d+)?\z/)
+
+    normalize_import_display_value(use_formatted_value && formatted.present? ? formatted : cell_value)
   end
 
   def detected_spreadsheet_extension(file)
