@@ -109,6 +109,10 @@ Rails.application.routes.draw do
       get :observer_2
       get :observer_3
       get :observer_4
+      get :submission_overview
+      get :export_submission_overview_xlsx
+      get :export_l1_xlsx
+      get :export_observer_pli_xlsx
       post :save_observer_pli
       patch :toggle_sidebar_menu
     end

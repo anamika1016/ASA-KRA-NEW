@@ -1,0 +1,208 @@
+<meta name="turbo-visit-control" content="reload">
+<meta name="turbo-cache-control" content="no-cache">
+
+<div class="main-content sidebar-hidden bg-gray-50 min-h-screen" data-turbo="false">
+  <div class="min-h-screen pl-64 pr-4 pt-4 pb-12 overflow-x-auto bg-gradient-to-br from-gray-50 to-gray-100">
+    <div class="w-full bg-white p-8 rounded-xl shadow-xl border border-gray-200">
+      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-8 pb-4 border-b-2 border-gray-200">
+        <div class="flex items-center">
+          <i class="fas fa-clipboard-check text-2xl text-violet-600 mr-3"></i>
+          <div>
+            <h2 class="text-3xl font-bold text-gray-800">Submission Status Overview</h2>
+            <p class="text-sm text-gray-500 mt-1">Dekhein kisne status bhara hai aur kiske paas pending hai</p>
+          </div>
+        </div>
+
+        <div class="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+          <div class="relative">
+            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <i class="fas fa-search text-gray-400"></i>
+            </div>
+            <input type="text"
+                   id="searchInput"
+                   placeholder="Search employee..."
+                   class="block w-full sm:w-64 pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500 transition-all duration-200">
+          </div>
+
+          <%= form_with url: submission_overview_employee_details_path, method: :get, local: true, class: "flex flex-col sm:flex-row flex-wrap gap-3", data: { turbo: false } do %>
+            <%= select_tag :status,
+                options_for_select([
+                  ["All Status", ""],
+                  ["Not Submitted", "not_submitted"],
+                  ["Pending", "pending"],
+                  ["Approved", "approved"],
+                  ["Returned", "returned"]
+                ], @selected_status_filter),
+                class: "w-full sm:w-40 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500",
+                onchange: "this.form.submit()" %>
+            <%= select_tag :month,
+                options_for_select([["All Months", ""]] + @month_options, @selected_review_month),
+                class: "w-full sm:w-44 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500",
+                onchange: "this.form.submit()" %>
+            <%= select_tag :financial_year,
+                options_for_select([["All Financial Years", ""]] + @financial_year_options.map { |fy| [fy, fy] }, @selected_financial_year),
+                class: "w-full sm:w-52 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500",
+                onchange: "this.form.submit()" %>
+          <% end %>
+
+          <%= link_to export_submission_overview_xlsx_employee_details_path(
+                status: @selected_status_filter,
+                month: @selected_review_month,
+                financial_year: @selected_financial_year
+              ),
+              class: "inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold shadow-sm transition-all" do %>
+            <i class="fas fa-file-excel"></i>
+            Export Excel
+          <% end %>
+        </div>
+      </div>
+
+      <%
+        monthly_statuses = @monthly_employee_data.values.map { |data| data[:status] }
+        not_submitted_count = monthly_statuses.count("not_submitted")
+        pending_count = monthly_statuses.count("pending")
+        approved_count = monthly_statuses.count { |s| %w[l1_approved l2_approved].include?(s) }
+        returned_count = monthly_statuses.count { |s| %w[l1_returned l2_returned].include?(s) }
+      %>
+
+      <div class="mb-6 grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+          <p class="text-xs font-medium text-blue-700 uppercase">Total Records</p>
+          <p class="text-2xl font-bold text-blue-900"><%= @monthly_employee_data.size %></p>
+        </div>
+        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+          <p class="text-xs font-medium text-gray-700 uppercase">Not Submitted</p>
+          <p class="text-2xl font-bold text-gray-900"><%= not_submitted_count %></p>
+        </div>
+        <div class="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+          <p class="text-xs font-medium text-yellow-800 uppercase">Pending</p>
+          <p class="text-2xl font-bold text-yellow-900"><%= pending_count %></p>
+        </div>
+        <div class="bg-green-50 p-4 rounded-lg border border-green-200">
+          <p class="text-xs font-medium text-green-800 uppercase">Approved</p>
+          <p class="text-2xl font-bold text-green-900"><%= approved_count %></p>
+        </div>
+        <div class="bg-red-50 p-4 rounded-lg border border-red-200">
+          <p class="text-xs font-medium text-red-800 uppercase">Returned</p>
+          <p class="text-2xl font-bold text-red-900"><%= returned_count %></p>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto bg-white rounded-lg shadow-sm border border-gray-200">
+        <table id="employeeTable" class="min-w-full divide-y divide-gray-300 text-sm">
+          <thead class="bg-gradient-to-r from-gray-800 to-gray-700">
+            <tr>
+              <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Employee Code</th>
+              <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Name</th>
+              <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Department</th>
+              <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Financial Year</th>
+              <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Month</th>
+              <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">L1 Manager</th>
+              <th class="px-6 py-4 text-center text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">% Progress</th>
+              <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Status</th>
+              <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Action</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            <% if @monthly_employee_data.empty? %>
+              <tr>
+                <td colspan="9" class="px-6 py-10 text-center text-gray-500">No records found for selected filters.</td>
+              </tr>
+            <% else %>
+              <% row_index = 0 %>
+              <% @monthly_employee_data.each do |_key, data| %>
+                <% 
+                  emp = data[:employee]
+                  month = data[:month]
+                  month_label = data[:month_label]
+                  quarter_name = data[:quarter_name]
+                  current_status = data[:status]
+                  status_config = data[:status_config]
+                  row_index += 1
+                %>
+                <tr class="<%= row_index.even? ? 'bg-gray-50' : 'bg-white' %> hover:bg-violet-50 transition-colors duration-200">
+                  <td class="px-6 py-4 text-sm text-gray-700 border-r border-gray-200"><%= emp.employee_code %></td>
+                  <td class="px-6 py-4 text-sm font-medium text-gray-900 border-r border-gray-200"><%= emp.employee_name %></td>
+                  <td class="px-6 py-4 text-sm text-gray-700 border-r border-gray-200"><%= emp.department %></td>
+                  <td class="px-6 py-4 text-sm text-gray-700 border-r border-gray-200"><%= data[:financial_year].presence || "N/A" %></td>
+                  <td class="px-6 py-4 text-sm text-gray-700 border-r border-gray-200">
+                    <span class="font-semibold text-violet-700"><%= month_label %></span>
+                    <span class="ml-2 text-xs text-gray-500"><%= quarter_name %></span>
+                  </td>
+                  <td class="px-6 py-4 text-sm text-gray-700 border-r border-gray-200"><%= emp.l1_employer_name %></td>
+                  <td class="px-6 py-4 text-sm text-center border-r border-gray-200">
+                    <span class="<%= data[:progress_value].nil? ? 'text-gray-400' : 'inline-flex items-center px-3 py-1 rounded bg-emerald-50 text-emerald-700 font-semibold' %>">
+                      <%= data[:progress_value].nil? ? "-" : "#{data[:progress]}%" %>
+                    </span>
+                  </td>
+                  <td class="px-6 py-4 text-sm border-r border-gray-200">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border <%= status_config[:color] %>">
+                      <% if %w[l1_approved l2_approved].include?(current_status) %>
+                        <i class="fas fa-check-circle mr-1"></i>
+                      <% elsif %w[l1_returned l2_returned].include?(current_status) %>
+                        <i class="fas fa-exclamation-triangle mr-1"></i>
+                      <% elsif current_status == "pending" %>
+                        <i class="fas fa-clock mr-1"></i>
+                      <% elsif current_status == "not_submitted" %>
+                        <i class="fas fa-minus-circle mr-1"></i>
+                      <% end %>
+                      <%= status_config[:text] %>
+                    </span>
+                  </td>
+                  <td class="px-6 py-4 text-sm">
+                    <% if current_status == "not_submitted" %>
+                      <span class="text-gray-400 text-sm">Not filled yet</span>
+                    <% else %>
+                      <%= link_to "View Details",
+                          employee_detail_path(emp, quarter: quarter_name, month: month, financial_year: data[:financial_year]),
+                          class: "inline-flex items-center px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg shadow-sm transition-all duration-200" %>
+                    <% end %>
+                  </td>
+                </tr>
+              <% end %>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .sidebar-hidden .min-h-screen {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+
+  .main-content {
+    margin-left: 240px;
+    padding: 1rem;
+    overflow-x: auto;
+  }
+
+  @media (max-width: 768px) {
+    .main-content {
+      margin-left: 0;
+      padding: 0.5rem;
+    }
+  }
+</style>
+
+<script>
+(function() {
+  const searchInput = document.getElementById('searchInput');
+  const table = document.getElementById('employeeTable');
+  if (!searchInput || !table) return;
+
+  const tbody = table.querySelector('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr')).filter(row => row.querySelectorAll('td').length > 1);
+
+  searchInput.addEventListener('input', function() {
+    const term = searchInput.value.toLowerCase().trim();
+    rows.forEach(row => {
+      const text = row.textContent.toLowerCase();
+      row.style.display = (term === '' || text.includes(term)) ? '' : 'none';
+    });
+  });
+})();
+</script>

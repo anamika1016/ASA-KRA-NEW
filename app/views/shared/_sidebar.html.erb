@@ -260,6 +260,18 @@
                 <span class="font-semibold">Month Master</span>
               <% end %>
             </li>
+
+            <li class="hs-accordion" id="users-accordion">
+              <%= link_to submission_overview_employee_details_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(submission_overview_employee_details_path)} text-base text-gray-800 rounded-lg" do %>
+                <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                  <rect x="4" y="5" width="16" height="14" rx="2.5" />
+                  <path d="M8 10.5h8M8 14h5" />
+                  <path d="M16.5 7.5h2.5M19 6v3" />
+                  <circle cx="8.5" cy="8" r="1.25" fill="currentColor" stroke="none" />
+                </svg>
+                <span class="font-semibold">Submission Status</span>
+              <% end %>
+            </li>
           <% end %>
 
           <% if has_observer_pli_responsibilities? %>

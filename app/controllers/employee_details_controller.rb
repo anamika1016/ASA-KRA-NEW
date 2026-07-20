@@ -5,7 +5,7 @@ require "set"
 
 class EmployeeDetailsController < ApplicationController
   before_action :set_employee_detail, only: [ :edit, :update, :destroy, :toggle_portal_status, :update_portal_role ]
-  load_and_authorize_resource except: [ :approve, :return, :l2_approve, :l2_return, :edit_l1, :edit_l2, :toggle_portal_status, :update_portal_role, :toggle_sidebar_menu, :bulk_update_portal_status, :bulk_destroy, :quarterly_pli, :export_quarterly_pli_xlsx, :quarterly_pli_detail, :save_quarterly_pli, :observer_1, :observer_2, :observer_3, :observer_4, :observer_pli_detail, :save_observer_pli ]
+  load_and_authorize_resource except: [ :approve, :return, :l2_approve, :l2_return, :edit_l1, :edit_l2, :toggle_portal_status, :update_portal_role, :toggle_sidebar_menu, :bulk_update_portal_status, :bulk_destroy, :quarterly_pli, :export_quarterly_pli_xlsx, :quarterly_pli_detail, :save_quarterly_pli, :observer_1, :observer_2, :observer_3, :observer_4, :observer_pli_detail, :save_observer_pli, :submission_overview, :export_submission_overview_xlsx, :export_l1_xlsx, :export_observer_pli_xlsx ]
 
   def index
     @employee_detail = EmployeeDetail.new
@@ -477,6 +477,92 @@ class EmployeeDetailsController < ApplicationController
       financial_year: @selected_financial_year
     )
     @monthly_employee_data = filter_l1_rows_by_observer_chain(@monthly_employee_data)
+  end
+
+  def submission_overview
+    unless current_user.hod? || current_user.admin?
+      redirect_to root_path, alert: "You are not authorized to access this page."
+      return
+    end
+
+    @employee_details = EmployeeDetail.includes(
+      user_details: [
+        :activity,
+        :department,
+        achievements: :achievement_remark
+      ]
+    ).order(Arel.sql("LOWER(employee_name) ASC"))
+
+    prepare_review_filters(@employee_details)
+    @selected_financial_year = params[:financial_year].presence
+    @financial_year_options = admin_financial_year_options
+    @selected_status_filter = params[:status].to_s.presence
+
+    @monthly_employee_data = build_admin_submission_overview_data(
+      @employee_details,
+      month: @selected_review_month,
+      financial_year: @selected_financial_year,
+      status_filter: @selected_status_filter
+    )
+  end
+
+  def export_submission_overview_xlsx
+    unless current_user.hod? || current_user.admin?
+      redirect_to root_path, alert: "You are not authorized to export Submission Status."
+      return
+    end
+
+    monthly_data = load_submission_overview_data
+    package = build_submission_overview_xlsx(monthly_data)
+    send_review_xlsx(
+      package,
+      [
+        "submission_status",
+        params[:financial_year].presence,
+        params[:month].presence,
+        params[:status].presence
+      ]
+    )
+  end
+
+  def export_l1_xlsx
+    authorize! :l1, EmployeeDetail
+
+    unless has_l1_responsibilities?
+      redirect_to root_path, alert: "L1 Employee Details menu is inactive for your login."
+      return
+    end
+
+    monthly_data = load_l1_monthly_data
+    package = build_l1_review_xlsx(monthly_data)
+    send_review_xlsx(
+      package,
+      [
+        "l1_employee_details",
+        params[:financial_year].presence,
+        params[:month].presence
+      ]
+    )
+  end
+
+  def export_observer_pli_xlsx
+    observer_level = observer_level_param
+    unless observer_pli_authorized?(observer_level)
+      redirect_to root_path, alert: "You are not authorized to export #{observer_menu_title(observer_level)}."
+      return
+    end
+
+    rows = load_observer_pli_rows(observer_level)
+    package = build_observer_pli_xlsx(rows, observer_level)
+    send_review_xlsx(
+      package,
+      [
+        observer_menu_title(observer_level).parameterize(separator: "_"),
+        params[:financial_year].presence,
+        params[:quarter].presence,
+        params[:month].presence
+      ]
+    )
   end
 
   # Show employee details with quarterly view
@@ -2494,6 +2580,291 @@ end
     return [ selected_month ] if selected_month.present?
 
     params[:selected_quarter].present? ? get_quarter_months(params[:selected_quarter]) : []
+  end
+
+  def build_admin_submission_overview_data(employee_details, month: nil, financial_year: nil, status_filter: nil)
+    monthly_data = build_monthly_employee_data(
+      employee_details,
+      approval_level: "l1",
+      month: month,
+      financial_year: financial_year
+    )
+
+    months_to_review = month.present? ? [ month ] : review_months
+
+    employee_details.each do |emp|
+      detail_groups = if financial_year.present?
+                        { financial_year => emp.user_details.select { |detail| detail.financial_year == financial_year } }
+                      else
+                        emp.user_details.group_by { |detail| detail.financial_year.presence || "No Financial Year" }
+                      end
+
+      detail_groups.each do |group_financial_year, details_for_review|
+        months_to_review.each do |review_month|
+          key = [ emp.id, review_month, group_financial_year ].join("_")
+          next if monthly_data.key?(key)
+
+          has_targets = details_for_review.any? { |detail| target_present_for_review_month?(detail, review_month) }
+          next unless has_targets
+
+          monthly_data[key] = {
+            employee: emp,
+            month: review_month,
+            month_label: month_label(review_month),
+            quarter_name: quarter_for_month(review_month),
+            financial_year: group_financial_year == "No Financial Year" ? nil : group_financial_year,
+            status: "not_submitted",
+            status_config: {
+              color: "bg-gray-100 text-gray-700 border-gray-300",
+              text: "Not Submitted",
+              icon: "fas fa-minus-circle"
+            },
+            achievements_count: 0,
+            progress_value: nil,
+            progress: "-"
+          }
+        end
+      end
+    end
+
+    monthly_data = apply_admin_status_filter(monthly_data, status_filter) if status_filter.present?
+
+    monthly_data.sort_by do |_key, data|
+      status_rank = case data[:status]
+                    when "pending" then 0
+                    when "not_submitted" then 1
+                    when "l1_returned", "l2_returned" then 2
+                    else 3
+                    end
+
+      [
+        status_rank,
+        data[:employee]&.employee_name.to_s.downcase,
+        data[:month].to_s,
+        data[:financial_year].to_s
+      ]
+    end.to_h
+  end
+
+  def apply_admin_status_filter(monthly_data, status_filter)
+    case status_filter
+    when "pending"
+      monthly_data.select { |_key, data| data[:status] == "pending" }
+    when "approved"
+      monthly_data.select { |_key, data| %w[l1_approved l2_approved].include?(data[:status]) }
+    when "returned"
+      monthly_data.select { |_key, data| %w[l1_returned l2_returned].include?(data[:status]) }
+    when "not_submitted"
+      monthly_data.select { |_key, data| data[:status] == "not_submitted" }
+    else
+      monthly_data
+    end
+  end
+
+  def admin_financial_year_options
+    start_year = Date.current.month >= 4 ? Date.current.year : Date.current.year - 1
+    nearby_years = ((start_year - 1)..(start_year + 1)).map { |year| "#{year}-#{year + 1}" }
+    persisted_years = UserDetail.where.not(financial_year: [ nil, "" ]).distinct.pluck(:financial_year)
+
+    (persisted_years + nearby_years).filter_map { |year| normalize_financial_year(year) }.uniq.sort.reverse
+  end
+
+  def load_submission_overview_data
+    employee_details = EmployeeDetail.includes(
+      user_details: [
+        :activity,
+        :department,
+        achievements: :achievement_remark
+      ]
+    ).order(Arel.sql("LOWER(employee_name) ASC"))
+
+    prepare_review_filters(employee_details)
+
+    build_admin_submission_overview_data(
+      employee_details,
+      month: @selected_review_month,
+      financial_year: params[:financial_year].presence,
+      status_filter: params[:status].to_s.presence
+    )
+  end
+
+  def load_l1_monthly_data
+    employee_details = if current_user.hod?
+      EmployeeDetail.includes(
+        user_details: [
+          :activity,
+          :department,
+          achievements: :achievement_remark
+        ]
+      ).all
+    else
+      EmployeeDetail
+        .where(status: [ "pending", "l1_returned", "l1_approved", "l2_returned", "l2_approved" ])
+        .where("LOWER(TRIM(COALESCE(l1_code, ''))) = ?", current_user.employee_code.to_s.strip.downcase)
+        .includes(
+          user_details: [
+            :activity,
+            :department,
+            achievements: :achievement_remark
+          ]
+        )
+    end
+
+    prepare_review_filters(employee_details)
+
+    filter_l1_rows_by_observer_chain(
+      build_monthly_employee_data(
+        employee_details,
+        approval_level: "l1",
+        month: @selected_review_month,
+        financial_year: @selected_financial_year
+      )
+    )
+  end
+
+  def load_observer_pli_rows(observer_level)
+    employee_details = observer_pli_employee_scope(observer_level).includes(
+      observer_pli_reviews: :reviewed_by,
+      user_details: [
+        :activity,
+        :department,
+        achievements: :achievement_remark
+      ]
+    )
+
+    financial_year_options = employee_details.flat_map { |employee|
+      employee.user_details.map(&:financial_year)
+    }.compact.reject(&:blank?).uniq.sort.reverse
+    selected_year = selected_financial_year || financial_year_options.first || current_financial_year
+
+    build_observer_pli_rows(
+      employee_details,
+      observer_level: observer_level,
+      financial_year: selected_year,
+      quarter: params[:quarter].presence,
+      month: normalize_month_param(params[:month])
+    )
+  end
+
+  def build_submission_overview_xlsx(monthly_data)
+    build_tabular_xlsx(
+      sheet_name: "Submission Status",
+      headers: [
+        "Employee Code", "Name", "Department", "Financial Year", "Month", "Quarter",
+        "L1 Manager", "% Progress", "Status"
+      ],
+      rows: monthly_data.values.map do |data|
+        employee = data[:employee]
+        [
+          employee.employee_code,
+          employee.employee_name,
+          employee.department,
+          data[:financial_year].presence || "-",
+          data[:month_label],
+          data[:quarter_name],
+          employee.l1_employer_name,
+          data[:progress_value].nil? ? "-" : "#{data[:progress]}%",
+          data[:status_config][:text]
+        ]
+      end
+    )
+  end
+
+  def build_l1_review_xlsx(monthly_data)
+    build_tabular_xlsx(
+      sheet_name: "L1 Employee Details",
+      headers: [
+        "Employee Code", "Name", "Department", "Financial Year", "Month", "Quarter",
+        "L1 Manager", "% Progress", "Status"
+      ],
+      rows: monthly_data.values.map do |data|
+        employee = data[:employee]
+        [
+          employee.employee_code,
+          employee.employee_name,
+          employee.department,
+          data[:financial_year].presence || "-",
+          data[:month_label],
+          data[:quarter_name],
+          employee.l1_employer_name,
+          data[:progress_value].nil? ? "-" : "#{data[:progress]}%",
+          data[:status_config][:text]
+        ]
+      end
+    )
+  end
+
+  def build_observer_pli_xlsx(rows, observer_level)
+    build_tabular_xlsx(
+      sheet_name: observer_menu_title(observer_level),
+      headers: [
+        "Employee Code", "Name", "Department", "Financial Year", "Quarter", "Month",
+        "Calculated %", "Status"
+      ],
+      rows: rows.map do |row|
+        employee = row[:employee]
+        [
+          employee.employee_code,
+          employee.employee_name,
+          employee.department.presence || "-",
+          row[:financial_year],
+          row[:quarter_label],
+          row[:month_label],
+          "#{row[:calculated_percentage]}%",
+          observer_row_status_label(row[:observer_review])
+        ]
+      end
+    )
+  end
+
+  def build_tabular_xlsx(sheet_name:, headers:, rows:)
+    package = Axlsx::Package.new
+    workbook = package.workbook
+    header_style, cell_style = review_xlsx_styles(workbook)
+
+    workbook.add_worksheet(name: sheet_name.to_s.first(31)) do |sheet|
+      sheet.add_row headers, style: header_style
+      rows.each { |row| sheet.add_row row, style: cell_style }
+      sheet.column_widths(*Array.new(headers.length, 18))
+    end
+
+    package
+  end
+
+  def review_xlsx_styles(workbook)
+    styles = workbook.styles
+    header_style = styles.add_style(
+      bg_color: "1F2937",
+      fg_color: "FFFFFF",
+      b: true,
+      alignment: { horizontal: :center, vertical: :center, wrap_text: true },
+      border: { style: :thin, color: "CBD5E1" }
+    )
+    cell_style = styles.add_style(
+      alignment: { vertical: :top, wrap_text: true },
+      border: { style: :thin, color: "E5E7EB" }
+    )
+
+    [ header_style, cell_style ]
+  end
+
+  def send_review_xlsx(package, filename_parts)
+    filename = "#{filename_parts.compact.join('_')}.xlsx"
+    tempfile = Tempfile.new([ filename_parts.compact.join("_"), ".xlsx" ])
+    package.serialize(tempfile.path)
+    send_file tempfile.path,
+              filename: filename,
+              type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  end
+
+  def observer_row_status_label(observer_review)
+    if observer_review&.status == "returned"
+      "Returned"
+    elsif observer_review.present?
+      "Approved"
+    else
+      "Pending"
+    end
   end
 
   def build_monthly_employee_data(employee_details, approval_level:, month: nil, financial_year: nil)
