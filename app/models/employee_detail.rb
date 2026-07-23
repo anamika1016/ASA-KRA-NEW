@@ -1,6 +1,8 @@
 class EmployeeDetail < ApplicationRecord
   DEFAULT_PORTAL_PASSWORD = "123456".freeze
   DEFAULT_PORTAL_ROLE = "employee".freeze
+  OBSERVER_CODE_FIELDS = %w[obs_code1 obs_code2 obs_code3 obs_code4].freeze
+  UNASSIGNED_CODE_VALUES = %w[- -- n/a na nil null none].freeze
   has_many :user_details, dependent: :destroy
   has_many :target_submissions, dependent: :destroy
   has_many :sms_logs, dependent: :destroy
@@ -11,6 +13,7 @@ class EmployeeDetail < ApplicationRecord
   has_many :user_training_assignments, dependent: :destroy
   has_many :assigned_trainings, through: :user_training_assignments, source: :training
   after_initialize :set_default_status, if: :new_record?
+  before_validation :normalize_observer_codes
   after_commit :sync_portal_account, on: [ :create, :update ]
   # belongs_to :department  # only if you have a departments table and department_id column
 
@@ -71,6 +74,17 @@ scope :l1_pending_records, -> { where(status: [ "pending", "returned" ]) }
     portal_active? ? "Active" : "Inactive"
   end
 
+  def observer_assigned?(observer_level)
+    return false unless OBSERVER_CODE_FIELDS.include?(observer_level.to_s)
+
+    self.class.assigned_code?(public_send(observer_level))
+  end
+
+  def self.assigned_code?(value)
+    normalized = value.to_s.strip.downcase
+    normalized.present? && !UNASSIGNED_CODE_VALUES.include?(normalized)
+  end
+
   def ensure_portal_user!
     return unless portal_account_ready?
 
@@ -103,6 +117,13 @@ scope :l1_pending_records, -> { where(status: [ "pending", "returned" ]) }
   end
 
   private
+
+  def normalize_observer_codes
+    OBSERVER_CODE_FIELDS.each do |field|
+      value = public_send(field).to_s.strip
+      public_send("#{field}=", self.class.assigned_code?(value) ? value : nil)
+    end
+  end
 
   def sync_portal_account
     ensure_portal_user!

@@ -1917,7 +1917,7 @@ end
 
   def observer_levels_for(employee_detail)
     ApplicationHelper::OBSERVER_LEVELS.select do |observer_level|
-      employee_detail.public_send(observer_level).to_s.strip.present?
+      employee_detail.observer_assigned?(observer_level)
     end
   end
 
@@ -1935,6 +1935,10 @@ end
   def observer_level_available_for_month?(employee_detail, financial_year, quarter, month, observer_level)
     levels = observer_levels_for(employee_detail)
     return false unless levels.include?(observer_level)
+    previous_levels = levels.take_while { |level| level != observer_level }
+    return false unless previous_levels.all? do |level|
+      observer_review_approved?(employee_detail, financial_year, quarter, month, level)
+    end
 
     submitted_month_payload_available?(employee_detail, financial_year, quarter, month)
   end

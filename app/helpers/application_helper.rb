@@ -103,7 +103,7 @@ module ApplicationHelper
     return false if employee_detail.blank?
     return false unless OBSERVER_LEVELS.include?(observer_level.to_s)
 
-    employee_detail.public_send(observer_level).to_s.strip.present?
+    employee_detail.observer_assigned?(observer_level)
   end
 
   def observer_level_number(observer_level)

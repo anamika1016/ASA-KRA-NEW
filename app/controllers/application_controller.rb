@@ -150,7 +150,7 @@ class ApplicationController < ActionController::Base
 
   def observer_chain_approved_for_achievement?(employee_detail, financial_year, month)
     assigned_levels = %w[obs_code1 obs_code2 obs_code3 obs_code4].select do |observer_level|
-      employee_detail.public_send(observer_level).to_s.strip.present?
+      employee_detail.observer_assigned?(observer_level)
     end
     return true if assigned_levels.empty?
 
