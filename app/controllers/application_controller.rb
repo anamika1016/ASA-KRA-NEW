@@ -58,15 +58,25 @@ class ApplicationController < ActionController::Base
   def l1_assignment_exists?
     return false unless current_user
 
-    code = current_user_identity_code
-    email = current_user_identity_email
-    return false if code.blank? && email.blank?
+    l1_employee_scope_for_current_user.exists?
+  end
+
+  def l1_employee_scope_for_current_user
+    return EmployeeDetail.all if current_user&.hod? || current_user&.admin?
+    return EmployeeDetail.none unless current_user
+
+    linked_employee = portal_employee_detail_for(current_user)
+    codes = [ current_user_identity_code, linked_employee&.employee_code ]
+            .filter_map { |value| value.to_s.strip.downcase.presence }.uniq
+    identities = [ current_user_identity_email, linked_employee&.employee_name, linked_employee&.employee_email ]
+                 .filter_map { |value| value.to_s.strip.downcase.presence }.uniq
+    return EmployeeDetail.none if codes.empty? && identities.empty?
 
     EmployeeDetail.where(
-      "(:code != '' AND LOWER(TRIM(COALESCE(l1_code, ''))) = :code) OR (:email != '' AND LOWER(TRIM(COALESCE(l1_employer_name, ''))) = :email)",
-      code: code.to_s.downcase,
-      email: email.to_s.downcase
-    ).exists?
+      "LOWER(TRIM(COALESCE(l1_code, ''))) IN (:codes) OR LOWER(TRIM(COALESCE(l1_employer_name, ''))) IN (:identities)",
+      codes: codes.presence || [ "" ],
+      identities: identities.presence || [ "" ]
+    )
   end
 
   def has_l2_responsibilities?
@@ -111,19 +121,7 @@ class ApplicationController < ActionController::Base
   def l1_pending_reviews_count
     return 0 unless user_signed_in? && has_l1_responsibilities?
 
-    employee_scope = if current_user.hod? || current_user.admin?
-      EmployeeDetail.all
-    else
-      code = current_user_identity_code
-      email = current_user_identity_email
-      return 0 if code.blank? && email.blank?
-
-      EmployeeDetail.where(
-        "(:code != '' AND LOWER(TRIM(COALESCE(l1_code, ''))) = :code) OR (:email != '' AND LOWER(TRIM(COALESCE(l1_employer_name, ''))) = :email)",
-        code: code.to_s.downcase,
-        email: email.to_s.downcase
-      )
-    end
+    employee_scope = l1_employee_scope_for_current_user
 
     Achievement.joins(user_detail: :employee_detail)
       .merge(employee_scope)

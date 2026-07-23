@@ -445,7 +445,7 @@ class EmployeeDetailsController < ApplicationController
       return
     end
 
-    if current_user.hod?
+    if current_user.hod? || current_user.admin?
       # PERFORMANCE FIX: Optimize includes to preload all necessary associations
       @employee_details = EmployeeDetail.includes(
         user_details: [
@@ -457,8 +457,8 @@ class EmployeeDetailsController < ApplicationController
     else
       # PERFORMANCE FIX: Optimize includes to preload all necessary associations
       @employee_details = EmployeeDetail
-                            .where(status: [ "pending", "l1_returned", "l1_approved", "l2_returned", "l2_approved" ])
-                            .where("LOWER(TRIM(COALESCE(l1_code, ''))) = ?", current_user.employee_code.to_s.strip.downcase)
+                            .where(status: [ nil, "pending", "l1_returned", "l1_approved", "l2_returned", "l2_approved" ])
+                            .merge(l1_employee_scope_for_current_user)
                             .includes(
                               user_details: [
                                 :activity,
@@ -2308,14 +2308,9 @@ end
   end
 
   def can_act_as_l1?(employee_detail)
-    code = current_user.employee_code.to_s.strip.downcase
-    email = current_user.email.to_s.strip.downcase
+    return true if current_user.hod? || current_user.admin?
 
-    current_user.hod? ||
-    (menu_access_enabled?(:l1) && (
-      code == employee_detail.l1_code.to_s.strip.downcase ||
-      email == employee_detail.l1_employer_name.to_s.strip.downcase
-    ))
+    menu_access_enabled?(:l1) && l1_employee_scope_for_current_user.where(id: employee_detail.id).exists?
   end
 
   def can_act_as_l2?(employee_detail)
@@ -2693,7 +2688,7 @@ end
   end
 
   def load_l1_monthly_data
-    employee_details = if current_user.hod?
+    employee_details = if current_user.hod? || current_user.admin?
       EmployeeDetail.includes(
         user_details: [
           :activity,
@@ -2703,8 +2698,8 @@ end
       ).all
     else
       EmployeeDetail
-        .where(status: [ "pending", "l1_returned", "l1_approved", "l2_returned", "l2_approved" ])
-        .where("LOWER(TRIM(COALESCE(l1_code, ''))) = ?", current_user.employee_code.to_s.strip.downcase)
+        .where(status: [ nil, "pending", "l1_returned", "l1_approved", "l2_returned", "l2_approved" ])
+        .merge(l1_employee_scope_for_current_user)
         .includes(
           user_details: [
             :activity,

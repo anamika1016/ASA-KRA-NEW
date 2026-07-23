@@ -2080,7 +2080,7 @@ class UserDetailsController < ApplicationController
 
   def observer_levels_for_employee(employee_detail)
     ApplicationHelper::OBSERVER_LEVELS.select do |observer_level|
-      employee_detail.public_send(observer_level).to_s.strip.present?
+      employee_detail.observer_assigned?(observer_level)
     end
   end
 
