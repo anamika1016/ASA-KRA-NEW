@@ -559,7 +559,11 @@ class UserDetailsController < ApplicationController
     @selected_quarter = quarter_name_for_month(@selected_month)
     @display_observer_levels = submitted_achievements_observer_levels(@user_details)
     @has_submitted_achievements = @user_details.any? do |detail|
-      detail.achievements.any? { |achievement| achievement.achievement.present? }
+      (manual_kri_target_editable?(detail) &&
+        MONTH_ATTRIBUTES.any? { |month| manual_kri_has_target_for_month?(detail, month) }) ||
+        detail.achievements.any? do |achievement|
+          achievement.achievement.present? || achievement.employee_remarks.present?
+        end
     end
     @achievement_entry_locked = current_user.role != "hod" && achievement_entry_locked_for_month?(@user_details, @selected_month)
     @achievement_entry_lock_message = "This month is locked because L1 has approved it." if @achievement_entry_locked
@@ -636,22 +640,39 @@ class UserDetailsController < ApplicationController
                 next
               end
 
-              activity = department.activities.build(
-                activity_name: activity_name,
-                unit: unit,
-                annual_target_fy: annual_target_fy,
-                theme_name: MANUAL_KRI_THEME
-              )
-              activity.save!
+              # A successful AJAX submission used to leave the unsaved-looking row in
+              # the browser. A second submit of that same row then created another
+              # Activity/UserDetail pair. Treat an identical manual KRI for this
+              # employee, year and month as the same row so retries are idempotent.
+              existing_user_detail = UserDetail.joins(:activity)
+                                               .where(
+                                                 employee_detail_id: employee_detail.id,
+                                                 financial_year: financial_year,
+                                                 activities: { theme_name: MANUAL_KRI_THEME }
+                                               )
+                                               .where("LOWER(TRIM(activities.activity_name)) = ?", activity_name.downcase)
+                                               .find { |detail| manual_kri_has_target_for_month?(detail, selected_submission_month) }
 
-              user_detail = UserDetail.create!(
-                department_id: department.id,
-                activity_id: activity.id,
-                employee_detail_id: employee_detail.id,
-                financial_year: financial_year,
-                **month_data
-              )
-              target_count += 1
+              if existing_user_detail
+                user_detail = existing_user_detail
+              else
+                activity = department.activities.build(
+                  activity_name: activity_name,
+                  unit: unit,
+                  annual_target_fy: annual_target_fy,
+                  theme_name: MANUAL_KRI_THEME
+                )
+                activity.save!
+
+                user_detail = UserDetail.create!(
+                  department_id: department.id,
+                  activity_id: activity.id,
+                  employee_detail_id: employee_detail.id,
+                  financial_year: financial_year,
+                  **month_data
+                )
+                target_count += 1
+              end
 
               new_achievements = target_params[:achievements] || target_params["achievements"] || {}
               new_achievements = new_achievements.to_unsafe_h if new_achievements.respond_to?(:to_unsafe_h)

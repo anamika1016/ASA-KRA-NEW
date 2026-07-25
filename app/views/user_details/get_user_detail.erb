@@ -1654,7 +1654,8 @@ function handleAchievementFormSubmission() {
   console.log('Form found:', form ? 'Yes' : 'No');
   console.log('Submit button found:', submitBtn ? 'Yes' : 'No');
   
-  if (!form) return;
+  if (!form || form.dataset.submissionBound === 'true') return;
+  form.dataset.submissionBound = 'true';
   
   // Form validation
   form.addEventListener('submit', function(e) {
@@ -1795,14 +1796,10 @@ function handleAchievementFormSubmission() {
     .then(data => {
       if (data.success) {
         showMessage('success', 'Success!', data.message || 'Achievements have been submitted successfully.');
-        
-        updateAllTotalAchievementCells();
-        
-        // Update the Submitted Achievements table immediately
-        updateSubmittedAchievementsTable();
-        
-        // Optional: Scroll to success message
-        document.getElementById('successMessage').scrollIntoView({ behavior: 'smooth' });
+
+        // Reload the selected month so newly-created KRI rows become persisted
+        // rows and cannot be submitted a second time from the stale form.
+        window.location.reload();
       } else {
         showMessage('error', 'Error!', data.message || 'There was an error submitting achievements. Please try again.');
       }
