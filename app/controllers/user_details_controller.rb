@@ -512,6 +512,8 @@ class UserDetailsController < ApplicationController
       @employee_detail = nil
     end
 
+    @user_details = UserDetail.deduplicate_manual_kri_rows(@user_details)
+
     set_active_month_context(@user_details, default_to_first: false)
     set_manual_kri_month_context
     @achievement_entry_locked = current_user.role != "hod" && @selected_month.present? && achievement_entry_locked_for_month?(@user_details, @selected_month)
@@ -608,6 +610,10 @@ class UserDetailsController < ApplicationController
           elsif selected_submission_month.present? && achievement_locked.call(employee_detail.id, financial_year_for_lock, selected_submission_month)
             errors << "#{short_month_label(selected_submission_month)}: This month is locked after L1 approval"
           else
+            # Serialize manual-KRI creation per employee. Without this lock two
+            # near-simultaneous retries can both pass the 3-row limit and create
+            # separate Activity/UserDetail pairs for the same KRI.
+            employee_detail.lock!
             financial_year = financial_year_for_lock
             department = department_for_new_target(employee_detail, financial_year)
 
@@ -2258,8 +2264,11 @@ class UserDetailsController < ApplicationController
     UserDetail.joins(:activity)
               .where(employee_detail_id: employee_detail_id, financial_year: financial_year)
               .where(activities: { theme_name: MANUAL_KRI_THEME })
-              .select(:id, month_key)
-              .count { |user_detail| manual_kri_has_target_for_month?(user_detail, month_key) }
+              .select("user_details.id", "user_details.#{month_key}", "activities.activity_name")
+              .select { |user_detail| manual_kri_has_target_for_month?(user_detail, month_key) }
+              .map { |user_detail| user_detail.activity_name.to_s.squish.downcase }
+              .uniq
+              .count
   end
 
   def manual_kri_month_data_for_submission(target_params, selected_month)

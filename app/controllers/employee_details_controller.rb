@@ -1476,8 +1476,9 @@ end
     @user_details = @employee_detail.user_details
                       .includes(:activity, :department, achievements: :achievement_remark)
     @user_details = @user_details.where(financial_year: @selected_financial_year) if @selected_financial_year.present?
+    @user_details = UserDetail.deduplicate_manual_kri_rows(@user_details.to_a)
     @calculated_review_progress_percentage = monthly_submission_progress_total_for(
-      @user_details.to_a,
+      @user_details,
       review_months_for_progress(@selected_month, @selected_quarter)
     )
 

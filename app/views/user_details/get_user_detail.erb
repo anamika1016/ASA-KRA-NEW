@@ -6,6 +6,14 @@
   .month-cell[data-month-hidden="true"] {
     display: none !important;
   }
+
+  /* A saved manual KRI belongs to exactly one month. The page already selected
+     that month on the server, so a later client-side filter must never hide it. */
+  <% if @selected_month.present? %>
+    #activityTableBody .activity-row[data-manual-kri="true"][data-manual-kri-month="<%= @selected_month %>"] {
+      display: table-row !important;
+    }
+  <% end %>
 </style>
 
 <div class="main-content bg-gray-50 min-h-screen">
@@ -58,7 +66,7 @@
 
   <% if @user_details.any? && @selected_month.present? %>
     <!-- ======================== FORM TO SUBMIT ACHIEVEMENTS ======================== -->
-    <%= form_with url: submit_achievements_user_details_path, method: :post, local: true, id: "achievementForm" do %>
+    <%= form_with url: submit_achievements_user_details_path, method: :post, local: true, id: "achievementForm", html: { novalidate: true } do %>
       <%= hidden_field_tag :authenticity_token, form_authenticity_token %>
       <%= hidden_field_tag :financial_year, @selected_financial_year %>
       <%= hidden_field_tag :month, @selected_month, id: "selectedSubmissionMonth" %>
@@ -131,16 +139,22 @@
               Monthly key result indicator submission
             </h2>
             <% if @employee_detail.present? %>
-              <button type="button"
-                      id="addKriRowBtn"
-                      data-kri-limit="<%= @remaining_manual_kri_slots %>"
-                      data-selected-month="<%= @selected_month %>"
-                      class="inline-flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white text-sm font-semibold rounded-lg shadow-sm transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="<%= @achievement_entry_locked ? @achievement_entry_lock_message : (@remaining_manual_kri_slots.positive? ? "You can add #{@remaining_manual_kri_slots} key result indicator row(s) for #{short_month_label(@selected_month)}" : "Maximum 3 key result indicator rows already added for #{short_month_label(@selected_month)}") %>"
-                      <%= "disabled" if @achievement_entry_locked || @remaining_manual_kri_slots.zero? %>>
-                <i class="fas fa-plus"></i>
-                Add key result indicator
-              </button>
+              <div class="flex flex-wrap items-center justify-end gap-3">
+                <span id="unsavedKriNotice" class="hidden text-sm font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <i class="fas fa-exclamation-circle mr-1"></i>
+                  New rows are not saved yet. Click Save achievements below.
+                </span>
+                <button type="button"
+                        id="addKriRowBtn"
+                        data-kri-limit="<%= @remaining_manual_kri_slots %>"
+                        data-selected-month="<%= @selected_month %>"
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white text-sm font-semibold rounded-lg shadow-sm transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="<%= @achievement_entry_locked ? @achievement_entry_lock_message : (@remaining_manual_kri_slots.positive? ? "You can add #{@remaining_manual_kri_slots} key result indicator row(s) for #{short_month_label(@selected_month)}" : "Maximum 3 key result indicator rows already added for #{short_month_label(@selected_month)}") %>"
+                        <%= "disabled" if @achievement_entry_locked || @remaining_manual_kri_slots.zero? %>>
+                  <i class="fas fa-plus"></i>
+                  Add key result indicator
+                </button>
+              </div>
             <% end %>
           </div>
           <p class="submission-subtitle"></p>
@@ -243,7 +257,9 @@
                       data-targets='<%= target_data.to_json.html_safe %>'
                       data-has-any-target="<%= has_any_target %>"
                       <%= 'data-manual-kri="true"'.html_safe if is_manual_kri %>
-                      <%= 'data-manual-kri-month="' + manual_kri_month.to_s + '"'.html_safe if is_manual_kri && manual_kri_month.present? %>
+                      <% if is_manual_kri && manual_kri_month.present? %>
+                        data-manual-kri-month="<%= manual_kri_month %>"
+                      <% end %>
                       <%= 'data-filtered-hidden="true" style="display:none;"'.html_safe unless has_selected_month_target %>>
 
                     <td class="serial-cell px-4 py-3 text-sm text-gray-800 border-r border-gray-200 text-center"><%= index + 1 %></td>
@@ -333,7 +349,7 @@
       </div>
 
       <div class="mt-6 flex justify-center">
-        <%= submit_tag "Submit achievements", class: "inline-flex items-center px-8 py-3 bg-gray-700 hover:bg-gray-800 text-white font-semibold rounded-lg shadow-md transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none", id: "submitBtn", disabled: @achievement_entry_locked %>
+        <%= submit_tag "Save achievements", class: "inline-flex items-center px-8 py-3 bg-gray-700 hover:bg-gray-800 text-white font-semibold rounded-lg shadow-md transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none", id: "submitBtn", disabled: @achievement_entry_locked %>
       </div>
     <% end %>
   <% elsif @user_details.any? %>
@@ -639,6 +655,14 @@ function initializeAchievementFilters() {
         // Apply filters
         filterByActivity(selectedActivity);
         filterByMonth(selectedMonth);
+
+        // Manual rows are persisted month-specific records. Keep the rows for
+        // the selected month visible even if another legacy filter marked them.
+        document.querySelectorAll(`.activity-row[data-manual-kri="true"][data-manual-kri-month="${selectedMonth}"]`).forEach(row => {
+            row.removeAttribute('data-filtered-hidden');
+            row.removeAttribute('data-activity-hidden');
+            row.style.display = '';
+        });
 
         // Update visibility
         updateRowVisibility();
@@ -1379,6 +1403,7 @@ function updateNewRowTargetState(input) {
 function initializeNewKriRows() {
   const addButton = document.getElementById('addKriRowBtn');
   const tableBody = document.getElementById('activityTableBody');
+  const unsavedNotice = document.getElementById('unsavedKriNotice');
   if (!addButton || !tableBody) return;
 
   if (achievementEntryLocked) {
@@ -1395,6 +1420,7 @@ function initializeNewKriRows() {
 
   function updateAddKriButtonState() {
     const newRowsCount = tableBody.querySelectorAll('.activity-row[data-new-row="true"]').length;
+    unsavedNotice?.classList.toggle('hidden', newRowsCount === 0);
     const limitReached = maxNewRows <= 0 || newRowsCount >= maxNewRows;
     addButton.disabled = maxNewRows <= 0 || limitReached;
     const selectedMonth = selectedSubmissionMonthValue();
@@ -1742,6 +1768,19 @@ function handleAchievementFormSubmission() {
       return;
     }
 
+    const newRowWithoutTarget = Array.from(document.querySelectorAll('.activity-row[data-new-row="true"]')).find(row => {
+      const kriName = row.querySelector('.new-kri-name')?.value.trim() || '';
+      const target = row.querySelector(`.target-cell[data-month="${selectedMonthForSubmit}"] .target-input`)?.value.trim() || '';
+      return kriName !== '' && target === '';
+    });
+
+    if (newRowWithoutTarget) {
+      showMessage('warning', 'Target required', `${monthLabel(selectedMonthForSubmit)}: Please enter Target for the new key result indicator.`);
+      newRowWithoutTarget.querySelector(`.target-cell[data-month="${selectedMonthForSubmit}"] .target-input`)?.focus();
+      resetSubmitButton();
+      return;
+    }
+
     const invalidAchievement = Array.from(achievementInputs).find(input => {
       return input.value.trim() !== '' && !/^-?\d+(?:\.\d+)?$/.test(input.value.trim());
     });
@@ -1783,15 +1822,12 @@ function handleAchievementFormSubmission() {
         'X-CSRF-Token': csrfToken
       }
     })
-    .then(response => {
+    .then(async response => {
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        // Handle HTTP errors (like 500)
-        if (response.status === 500) {
-          throw new Error('Server error (500). Please check the server logs.');
-        }
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(data.message || `HTTP error! status: ${response.status}`);
       }
-      return response.json();
+      return data;
     })
     .then(data => {
       if (data.success) {
@@ -1813,7 +1849,7 @@ function handleAchievementFormSubmission() {
       } else if (error.message.includes('CSRF')) {
         showMessage('error', 'CSRF Error', 'Security token error. Please refresh the page and try again.');
       } else {
-        showMessage('error', 'Network Error', 'There was an error submitting achievements. Please try again.');
+        showMessage('error', 'Unable to save', error.message || 'There was an error submitting achievements. Please try again.');
       }
     })
     .finally(() => {
@@ -1827,12 +1863,12 @@ function resetSubmitButton() {
   if (submitBtn) {
     if (achievementEntryLocked) {
       submitBtn.disabled = true;
-      submitBtn.innerHTML = 'Submit achievements';
+      submitBtn.innerHTML = 'Save achievements';
       return;
     }
 
     submitBtn.disabled = false;
-    submitBtn.innerHTML = 'Submit achievements';
+    submitBtn.innerHTML = 'Save achievements';
   }
 }
 
