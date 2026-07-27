@@ -112,7 +112,7 @@
           <label for="observerRemarks" class="block font-semibold text-gray-900 mb-2">
             <i class="fas fa-comment-alt text-sky-600 mr-1"></i> Remarks
           </label>
-          <textarea id="observerRemarks" name="final_remarks" rows="4" maxlength="500" placeholder="Enter your remarks here..." class="w-full border border-gray-300 rounded-xl p-3 text-gray-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 transition-all resize-none" required></textarea>
+          <textarea id="observerRemarks" name="final_remarks" rows="4" maxlength="500" placeholder="Enter your remarks here..." class="w-full border border-gray-300 rounded-xl p-3 text-gray-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 transition-all resize-none" required><%= @observer_review&.final_remarks %></textarea>
         </div>
 
         <div class="flex justify-end gap-3 pt-2">
@@ -168,6 +168,7 @@ function initObserverPliModal() {
   const formIcon = document.getElementById('observerFormIcon');
   const actionTypeInput = document.getElementById('observerActionType');
   const remarksInput = document.getElementById('observerRemarks');
+  const savedRemarks = remarksInput?.value || '';
 
   if (!modal) return;
 
@@ -175,7 +176,7 @@ function initObserverPliModal() {
     modal.classList.add('hidden');
     modal.classList.remove('flex');
     document.body.style.overflow = '';
-    if (remarksInput) remarksInput.value = '';
+    if (remarksInput) remarksInput.value = savedRemarks;
   }
 
   function openModal(actionType) {
@@ -188,7 +189,7 @@ function initObserverPliModal() {
     formIcon.innerHTML = isReturn
       ? '<i class="fas fa-undo text-red-600"></i>'
       : '<i class="fas fa-check text-green-600"></i>';
-    if (remarksInput) remarksInput.value = '';
+    if (remarksInput) remarksInput.value = savedRemarks;
     modal.classList.remove('hidden');
     modal.classList.add('flex');
     document.body.style.overflow = 'hidden';

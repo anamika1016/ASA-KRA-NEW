@@ -81,7 +81,7 @@
                       <i class="fas fa-undo mr-1"></i>
                       Returned
                     </span>
-                  <% elsif observer_review.present? %>
+                  <% elsif observer_review&.status == "approved" %>
                     <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border bg-green-100 text-green-800 border-green-300">
                       <i class="fas fa-check-circle mr-1"></i>
                       Approved

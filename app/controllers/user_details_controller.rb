@@ -315,6 +315,12 @@ class UserDetailsController < ApplicationController
           l2_percentage: nil,
           updated_at: Time.current
         )
+
+        reset_observer_reviews_for_resubmission(
+          employee_detail_id,
+          @selected_financial_year,
+          editable_months
+        )
       end
     end
 
@@ -515,7 +521,7 @@ class UserDetailsController < ApplicationController
     set_active_month_context(@user_details, default_to_first: false)
     set_manual_kri_month_context
     @achievement_entry_locked = current_user.role != "hod" && @selected_month.present? && achievement_entry_locked_for_month?(@user_details, @selected_month)
-    @achievement_entry_lock_message = "This month is locked because L1 has approved it." if @achievement_entry_locked
+    @achievement_entry_lock_message = achievement_entry_lock_message if @achievement_entry_locked
   end
 
   def submitted_achievements
@@ -566,7 +572,7 @@ class UserDetailsController < ApplicationController
         end
     end
     @achievement_entry_locked = current_user.role != "hod" && achievement_entry_locked_for_month?(@user_details, @selected_month)
-    @achievement_entry_lock_message = "This month is locked because L1 has approved it." if @achievement_entry_locked
+    @achievement_entry_lock_message = achievement_entry_lock_message if @achievement_entry_locked
   end
 
   def submit_achievements
@@ -579,6 +585,7 @@ class UserDetailsController < ApplicationController
       target_update_count = 0
       sms_results = []
       processed_employees = Set.new
+      observer_reviews_to_reset = Set.new
       errors = []
 
 
@@ -606,7 +613,7 @@ class UserDetailsController < ApplicationController
           if employee_detail.blank?
             errors << "Employee detail not found for new key result indicator."
           elsif selected_submission_month.present? && achievement_locked.call(employee_detail.id, financial_year_for_lock, selected_submission_month)
-            errors << "#{short_month_label(selected_submission_month)}: This month is locked after L1 approval"
+            errors << "#{short_month_label(selected_submission_month)}: This month is locked after reviewer approval"
           else
             # Serialize manual-KRI creation per employee. Without this lock two
             # near-simultaneous retries can both pass the 3-row limit and create
@@ -669,7 +676,7 @@ class UserDetailsController < ApplicationController
                 next if selected_submission_month.present? && month.to_s.downcase != selected_submission_month
 
                 if achievement_locked.call(employee_detail.id, financial_year, month)
-                  errors << "#{short_month_label(month)}: This month is locked after L1 approval"
+                  errors << "#{short_month_label(month)}: This month is locked after reviewer approval"
                   next
                 end
 
@@ -710,6 +717,7 @@ class UserDetailsController < ApplicationController
 
                 if achievement.save
                   success_count += 1
+                  observer_reviews_to_reset.add([ employee_detail.id, financial_year, month.to_s.downcase ])
                 end
               end
 
@@ -755,7 +763,7 @@ class UserDetailsController < ApplicationController
               next unless MONTH_ATTRIBUTES.map(&:to_s).include?(month_key)
               next if selected_submission_month.present? && month_key != selected_submission_month
               if achievement_locked.call(user_detail.employee_detail_id, user_detail.financial_year, month_key)
-                errors << "#{short_month_label(month_key)}: This month is locked after L1 approval"
+                errors << "#{short_month_label(month_key)}: This month is locked after reviewer approval"
                 next
               end
               next unless target_editable_for_month?(user_detail, month_key)
@@ -785,7 +793,7 @@ class UserDetailsController < ApplicationController
             next if selected_submission_month.present? && month.to_s.downcase != selected_submission_month
 
             if achievement_locked.call(employee_detail.id, user_detail.financial_year, month)
-              errors << "#{short_month_label(month)}: This month is locked after L1 approval"
+              errors << "#{short_month_label(month)}: This month is locked after reviewer approval"
               next
             end
 
@@ -824,6 +832,7 @@ class UserDetailsController < ApplicationController
 
             if achievement.save
               success_count += 1
+              observer_reviews_to_reset.add([ employee_detail.id, user_detail.financial_year, month.to_s.downcase ])
             end
           end
 
@@ -855,6 +864,10 @@ class UserDetailsController < ApplicationController
               end
             end
           end
+        end
+
+        observer_reviews_to_reset.each do |employee_detail_id, financial_year, month|
+          reset_observer_reviews_for_resubmission(employee_detail_id, financial_year, [ month ])
         end
       end
 
@@ -1367,6 +1380,21 @@ class UserDetailsController < ApplicationController
 
 
   private
+
+  def reset_observer_reviews_for_resubmission(employee_detail_id, financial_year, months)
+    normalized_months = Array(months).map { |month| month.to_s.downcase }.compact_blank.uniq
+    return if employee_detail_id.blank? || financial_year.blank? || normalized_months.empty?
+
+    ObserverPliReview.where(
+      employee_detail_id: employee_detail_id,
+      financial_year: financial_year,
+      month: normalized_months
+    ).update_all(
+      status: "pending",
+      reviewed_at: nil,
+      updated_at: Time.current
+    )
+  end
 
   def user_detail_import_sheets(file, extension)
     if extension == ".csv"
@@ -2202,24 +2230,49 @@ class UserDetailsController < ApplicationController
     return false if month.blank?
 
     details = Array(user_details)
-    employee_ids = details.map(&:employee_detail_id).compact.uniq
-    financial_years = details.map(&:financial_year).compact.uniq
-    return false if employee_ids.empty? || financial_years.empty?
+    employee_year_pairs = details.filter_map do |detail|
+      next if detail.employee_detail_id.blank? || detail.financial_year.blank?
 
-    achievement_locked_scope(employee_ids, financial_years, month).exists?
+      [ detail.employee_detail_id, detail.financial_year ]
+    end.uniq
+
+    employee_year_pairs.any? do |employee_detail_id, financial_year|
+      achievement_locked_for_employee_month?(employee_detail_id, financial_year, month)
+    end
   end
 
   def achievement_locked_for_employee_month?(employee_detail_id, financial_year, month)
     return false if employee_detail_id.blank? || financial_year.blank? || month.blank?
 
-    achievement_locked_scope([ employee_detail_id ], [ financial_year ], month).exists?
+    month_achievements = Achievement.joins(:user_detail)
+                                    .where(user_details: { employee_detail_id: employee_detail_id, financial_year: financial_year })
+                                    .where(month: month.to_s.downcase)
+
+    # The latest return stage reopens the month, overriding every approval
+    # completed earlier in the observer/L1/L2 chain.
+    return false if month_achievements.where(status: [ "l1_returned", "l2_returned" ]).exists?
+    return true if month_achievements.where(status: [ "l1_approved", "l2_approved" ]).exists?
+
+    observer_approval_locks_month?(employee_detail_id, financial_year, month)
   end
 
-  def achievement_locked_scope(employee_detail_ids, financial_years, month)
-    Achievement.joins(:user_detail)
-               .where(user_details: { employee_detail_id: employee_detail_ids, financial_year: financial_years })
-               .where(month: month.to_s.downcase)
-               .where(status: [ "l1_approved", "l2_approved" ])
+  def observer_approval_locks_month?(employee_detail_id, financial_year, month)
+    reviews = ObserverPliReview.where(
+      employee_detail_id: employee_detail_id,
+      financial_year: financial_year,
+      month: month.to_s.downcase
+    )
+
+    # A return must reopen the month even when an earlier observer in the
+    # chain had already approved it. After resubmission all reviews are reset
+    # to pending, so the month stays editable until an observer approves again.
+    return false if reviews.where(status: "returned").exists?
+
+    reviews.where(status: "approved").exists?
+  end
+
+  def achievement_entry_lock_message
+    "This month is locked because an observer or L1 has approved it."
   end
 
   def manual_kri_target_editable?(user_detail)

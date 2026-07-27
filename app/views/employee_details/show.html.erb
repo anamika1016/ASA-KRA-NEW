@@ -396,36 +396,33 @@
       
       
       
-      # FIXED: L2 statuses should take highest priority
-      # If ANY month has L2 approved, the quarter is L2 approved
-      if quarterly_statuses.include?("l2_approved")
-        overall_quarter_status = "l2_approved"
-
       # If ANY month has L2 returned, the quarter is L2 returned
-      elsif quarterly_statuses.include?("l2_returned")
+      if quarterly_statuses.include?("l2_returned")
         overall_quarter_status = "l2_returned"
-
-      # If ALL months are L1 approved, the quarter is L1 approved
-      elsif quarterly_statuses.all? { |s| s == "l1_approved" }
-        overall_quarter_status = "l1_approved"
 
       # If ANY month has L1 returned, the quarter is L1 returned
       elsif quarterly_statuses.any? { |s| s == "l1_returned" }
         overall_quarter_status = "l1_returned"
 
-      # Check if L1 has approved the quarter (has percentage and remarks) even if some months are pending
-      # BUT only if no months are returned
-      elsif quarter_l1_total > 0 && quarter_remarks_l1.any? && !quarterly_statuses.any? { |s| ["l1_returned", "l2_returned"].include?(s) }
+      # A resubmitted KRA remains pending even though its previous remarks are retained.
+      elsif quarterly_statuses.any? { |s| s == "pending" }
+        overall_quarter_status = "pending"
+
+      # If ALL months are L2 approved, the quarter is L2 approved
+      elsif quarterly_statuses.all? { |s| s == "l2_approved" }
+        overall_quarter_status = "l2_approved"
+
+      # If ALL months are L1 approved, the quarter is L1 approved
+      elsif quarterly_statuses.all? { |s| s == "l1_approved" }
         overall_quarter_status = "l1_approved"
 
       # Check for submitted status
       elsif quarterly_statuses.any? { |s| s == "submitted" }
         overall_quarter_status = "submitted"
 
-      # If any month is pending, the quarter is pending
-      elsif quarterly_statuses.any? { |s| s == "pending" }
-        # FIXED: If ANY month is pending, the entire quarter is pending
-        overall_quarter_status = "pending"
+      # Legacy fallback for records that have approval data but no pending status.
+      elsif quarter_l1_total > 0 && quarter_remarks_l1.any?
+        overall_quarter_status = "l1_approved"
 
       end
       

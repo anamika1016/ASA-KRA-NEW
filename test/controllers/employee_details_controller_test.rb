@@ -62,6 +62,25 @@ class EmployeeDetailsControllerTest < ActionDispatch::IntegrationTest
     )
   end
 
+  test "resubmitted pending KRA is not automatically treated as L1 approved from old remarks" do
+    old_remark = Struct.new(:l1_percentage, :l1_remarks, :l2_percentage, :l2_remarks).new(
+      100,
+      "Please revise and submit again",
+      nil,
+      nil
+    )
+    achievement = Struct.new(:achievement_remark).new(old_remark)
+
+    status = EmployeeDetailsController.new.send(
+      :calculate_month_status,
+      [ "pending" ],
+      [ achievement ],
+      "l1"
+    )
+
+    assert_equal "pending", status
+  end
+
   private
 
   def create_quarterly_pli_source(source_time: 1.day.ago)

@@ -9,19 +9,20 @@ function initObserverReviewPanel() {
   const actionTypeInput = document.getElementById('observerActionType');
   const remarksInput = document.getElementById('observerRemarks');
   const form = document.getElementById('observerForm');
+  const savedRemarks = remarksInput?.value || '';
 
   if (!modal) return;
 
   function closeModal() {
     modal.classList.add('hidden');
-    if (remarksInput) remarksInput.value = '';
+    if (remarksInput) remarksInput.value = savedRemarks;
   }
 
   function openModal(actionType) {
     const isReturn = actionType === 'return';
     if (actionTypeInput) actionTypeInput.value = actionType;
     if (formTitle) formTitle.textContent = isReturn ? 'Return with Remarks' : 'Approve with Remarks';
-    if (remarksInput) remarksInput.value = '';
+    if (remarksInput) remarksInput.value = savedRemarks;
     modal.classList.remove('hidden');
     remarksInput?.focus();
   }

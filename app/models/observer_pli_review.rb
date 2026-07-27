@@ -6,5 +6,5 @@ class ObserverPliReview < ApplicationRecord
   validates :quarter, inclusion: { in: %w[Q1 Q2 Q3 Q4] }
   validates :month, inclusion: { in: %w[april may june july august september october november december january february march] }, allow_blank: true
   validates :observer_level, inclusion: { in: ApplicationHelper::OBSERVER_LEVELS }
-  validates :status, inclusion: { in: %w[approved returned] }
+  validates :status, inclusion: { in: %w[pending approved returned] }
 end

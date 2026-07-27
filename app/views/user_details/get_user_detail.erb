@@ -1408,7 +1408,7 @@ function initializeNewKriRows() {
 
   if (achievementEntryLocked) {
     addButton.disabled = true;
-    addButton.title = '<%= j(@achievement_entry_lock_message || "This month is locked after L1 approval.") %>';
+    addButton.title = '<%= j(@achievement_entry_lock_message || "This month is locked after reviewer approval.") %>';
     return;
   }
 
@@ -1691,7 +1691,7 @@ function handleAchievementFormSubmission() {
     e.preventDefault();
 
     if (achievementEntryLocked) {
-      showMessage('warning', 'Month locked', '<%= j(@achievement_entry_lock_message || "This month is locked after L1 approval.") %>');
+      showMessage('warning', 'Month locked', '<%= j(@achievement_entry_lock_message || "This month is locked after reviewer approval.") %>');
       resetSubmitButton();
       return;
     }

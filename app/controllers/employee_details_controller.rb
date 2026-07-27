@@ -1123,8 +1123,8 @@ end
       return
     end
 
-    if remarks.blank? && !observer_activity_remarks_present?(employee_detail, month, observer_level)
-      redirect_to observer_pli_detail_employee_detail_path(employee_detail, observer_level: observer_level, financial_year: financial_year, quarter: quarter, month: month), alert: "Activity-wise observer remarks are required."
+    if remarks.blank?
+      redirect_to observer_pli_detail_employee_detail_path(employee_detail, observer_level: observer_level, financial_year: financial_year, quarter: quarter, month: month), alert: "Remarks are required."
       return
     end
 
@@ -1140,7 +1140,7 @@ end
       month: month,
       observer_level: observer_level
     )
-    review.final_remarks = bounded_review_text(remarks) if remarks.present?
+    review.final_remarks = bounded_review_text(remarks)
     review.status = action_type == "return" ? "returned" : "approved"
     review.reviewed_by = current_user
     review.reviewed_at = Time.current
@@ -1934,10 +1934,6 @@ end
   def observer_level_available_for_month?(employee_detail, financial_year, quarter, month, observer_level)
     levels = observer_levels_for(employee_detail)
     return false unless levels.include?(observer_level)
-    previous_levels = levels.take_while { |level| level != observer_level }
-    return false unless previous_levels.all? do |level|
-      observer_review_approved?(employee_detail, financial_year, quarter, month, level)
-    end
 
     submitted_month_payload_available?(employee_detail, financial_year, quarter, month)
   end
@@ -2912,7 +2908,7 @@ end
   def observer_row_status_label(observer_review)
     if observer_review&.status == "returned"
       "Returned"
-    elsif observer_review.present?
+    elsif observer_review&.status == "approved"
       "Approved"
     else
       "Pending"
@@ -3020,10 +3016,14 @@ end
 
     if statuses.any? { |status| status == "l2_returned" }
       "l2_returned"
-    elsif statuses.all? { |status| status == "l2_approved" } || has_l2_approval
+    elsif statuses.all? { |status| status == "l2_approved" }
       "l2_approved"
     elsif statuses.any? { |status| status == "l1_returned" }
       "l1_returned"
+    elsif statuses.any? { |status| status == "pending" }
+      approval_level == "l2" ? "l1_approved" : "pending"
+    elsif has_l2_approval
+      "l2_approved"
     elsif statuses.all? { |status| status == "l1_approved" } || has_l1_approval
       "l1_approved"
     elsif approval_level == "l2"
