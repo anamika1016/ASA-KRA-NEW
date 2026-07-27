@@ -32,7 +32,7 @@ class UserDetailsController < ApplicationController
     set_financial_year_context
     scope = target_details_scope
 
-    @user_details = scope.page(params[:page]).per(100).load
+    @user_details = UserDetail.deduplicate_manual_kri_rows(scope.page(params[:page]).per(100).load)
     @target_reviewer_badges = target_reviewer_badges(@user_details)
   end
 
@@ -92,7 +92,9 @@ class UserDetailsController < ApplicationController
         # Department dropdowns use one row per department name, while imported KRIs are
         # stored on employee-specific department rows. Resolve by department name so the
         # selected employee's actual KRI rows are shown dynamically.
-        @user_details = user_details_scope.order("user_details.id ASC").to_a
+        @user_details = UserDetail.deduplicate_manual_kri_rows(
+          user_details_scope.order("user_details.id ASC").to_a
+        )
         @activity_detail_rows = @user_details.filter_map do |detail|
           activity = detail.activity
           activity ? [ activity, detail ] : nil
@@ -546,6 +548,8 @@ class UserDetailsController < ApplicationController
       @employee_detail = nil
       @user_details = UserDetail.none
     end
+
+    @user_details = UserDetail.deduplicate_manual_kri_rows(@user_details)
 
     set_active_month_context(@user_details, include_all_months: true)
     if params[:month].blank?

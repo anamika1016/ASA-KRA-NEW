@@ -817,6 +817,7 @@ end
     @user_details = @employee_detail.user_details
                       .includes(:activity, :department, achievements: :achievement_remark)
     @user_details = @user_details.where(financial_year: @selected_financial_year) if @selected_financial_year.present?
+    @user_details = UserDetail.deduplicate_manual_kri_rows(@user_details.to_a)
 
     # If quarter is selected, filter achievements by quarter
     if @selected_quarter.present?
@@ -2129,6 +2130,7 @@ end
     user_details = employee_detail.user_details.select do |detail|
       detail.financial_year.to_s == financial_year.to_s && detail.activity.present?
     end
+    user_details = UserDetail.deduplicate_manual_kri_rows(user_details)
     return nil if user_details.empty?
 
     reviewable_months = quarter_months.select do |quarter_month|
