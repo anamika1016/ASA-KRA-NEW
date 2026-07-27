@@ -24,10 +24,6 @@
                 options_for_select([["All Quarters", ""]] + @quarter_options, @selected_observer_pli_quarter),
                 class: "w-full sm:w-48 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500",
                 onchange: "this.form.submit()" %>
-            <%= select_tag :month,
-                options_for_select([["All Months", ""]] + @month_options, @selected_observer_pli_month),
-                class: "w-full sm:w-44 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500",
-                onchange: "this.form.submit()" %>
             <%= select_tag :financial_year,
                 options_for_select(@financial_year_options, @selected_financial_year),
                 class: "w-full sm:w-52 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500",
@@ -37,8 +33,7 @@
           <%= link_to export_observer_pli_xlsx_employee_details_path(
                 observer_level: @observer_level,
                 financial_year: @selected_financial_year,
-                quarter: @selected_observer_pli_quarter,
-                month: @selected_observer_pli_month
+                quarter: @selected_observer_pli_quarter
               ),
               class: "inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold shadow-sm transition-all" do %>
             <i class="fas fa-file-excel"></i>
@@ -56,7 +51,7 @@
               <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Department</th>
               <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Financial Year</th>
               <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Quarter</th>
-              <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Month</th>
+              <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Observer Name</th>
               <th class="px-6 py-4 text-center text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Calculated %</th>
               <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Status</th>
               <th class="px-6 py-4 text-center text-xs font-semibold text-white uppercase tracking-wider">Action</th>
@@ -75,7 +70,7 @@
                   <span class="font-semibold text-sky-700"><%= row[:quarter_label] %></span>
                 </td>
                 <td class="px-6 py-4 text-sm text-gray-700 border-r border-gray-200">
-                  <span class="font-semibold text-sky-700"><%= row[:month_label] %></span>
+                  <span class="font-semibold text-sky-700"><%= row[:observer_name] %></span>
                 </td>
                 <td class="px-6 py-4 text-sm text-center border-r border-gray-200">
                   <span class="inline-flex items-center px-3 py-1 rounded bg-emerald-50 text-emerald-700 font-semibold"><%= row[:calculated_percentage] %>%</span>

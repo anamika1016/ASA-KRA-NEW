@@ -97,7 +97,7 @@
               <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Department</th>
               <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Financial Year</th>
               <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Month</th>
-              <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">L1 Manager</th>
+              <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Reviewer</th>
               <th class="px-6 py-4 text-center text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">% Progress</th>
               <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Status</th>
               <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Action</th>
@@ -129,7 +129,14 @@
                     <span class="font-semibold text-violet-700"><%= month_label %></span>
                     <span class="ml-2 text-xs text-gray-500"><%= quarter_name %></span>
                   </td>
-                  <td class="px-6 py-4 text-sm text-gray-700 border-r border-gray-200"><%= emp.l1_employer_name %></td>
+                  <td class="px-6 py-4 text-sm text-gray-700 border-r border-gray-200">
+                    <% if data[:status_reviewer_name].present? %>
+                      <div class="font-semibold text-gray-900"><%= data[:status_reviewer_name] %></div>
+                      <div class="text-xs text-gray-500"><%= data[:status_reviewer_role].presence || "-" %></div>
+                    <% else %>
+                      <span class="text-gray-400">-</span>
+                    <% end %>
+                  </td>
                   <td class="px-6 py-4 text-sm text-center border-r border-gray-200">
                     <span class="<%= data[:progress_value].nil? ? 'text-gray-400' : 'inline-flex items-center px-3 py-1 rounded bg-emerald-50 text-emerald-700 font-semibold' %>">
                       <%= data[:progress_value].nil? ? "-" : "#{data[:progress]}%" %>

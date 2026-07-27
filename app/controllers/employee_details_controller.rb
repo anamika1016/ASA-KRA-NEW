@@ -559,8 +559,7 @@ class EmployeeDetailsController < ApplicationController
       [
         observer_menu_title(observer_level).parameterize(separator: "_"),
         params[:financial_year].presence,
-        params[:quarter].presence,
-        params[:month].presence
+        params[:quarter].presence
       ]
     )
   end
@@ -1793,13 +1792,11 @@ end
     @observer_level = observer_level
     @observer_title = observer_menu_title(observer_level)
     @selected_observer_pli_quarter = params[:quarter].presence
-    @selected_observer_pli_month = normalize_month_param(params[:month])
+    @selected_observer_pli_month = nil
     @selected_financial_year = selected_financial_year || current_financial_year
     @quarter_options = get_all_quarters.map do |quarter|
       [ "#{quarter} (#{get_quarter_months(quarter).map { |month| month_label(month) }.join('-')})", quarter ]
     end
-    @month_options = review_months.map { |month| [ month_label(month), month ] }
-
     employee_details = observer_pli_employee_scope(observer_level).includes(
       observer_pli_reviews: :reviewed_by,
       user_details: [
@@ -1838,6 +1835,7 @@ end
       [ quarter_name, months ]
     end
     employee_ids = employee_details.map(&:id)
+    observer_names_by_code = observer_names_by_code_for(employee_details)
     observer_reviews = ObserverPliReview
                          .where(employee_detail_id: employee_ids, financial_year: financial_year, quarter: quarters, observer_level: observer_level)
                          .includes(:reviewed_by)
@@ -1859,6 +1857,7 @@ end
             month: month_name,
             month_label: month_label(month_name),
             quarter_label: "#{quarter_name} (#{payload[:months].map { |payload_month| payload_month[:label] }.join('-')})",
+            observer_name: observer_names_by_code[employee.public_send(observer_level).to_s.strip.downcase].presence || "-",
             calculated_percentage: payload[:quarter_percentage],
             observer_review: observer_reviews[[ employee.id, quarter_name, month_name ]],
             detail_payload: payload
@@ -2588,6 +2587,7 @@ end
       month: month,
       financial_year: financial_year
     )
+    add_status_reviewer_details!(monthly_data, employee_details)
 
     months_to_review = month.present? ? [ month ] : review_months
 
@@ -2643,6 +2643,58 @@ end
         data[:financial_year].to_s
       ]
     end.to_h
+  end
+
+  def add_status_reviewer_details!(monthly_data, employee_details)
+    pending_rows = monthly_data.values.select { |data| data[:status] == "pending" }
+    approved_observer_keys = if pending_rows.empty?
+      Set.new
+    else
+      ObserverPliReview
+        .where(
+          employee_detail_id: pending_rows.map { |data| data[:employee].id }.uniq,
+          financial_year: pending_rows.filter_map { |data| data[:financial_year] }.uniq,
+          quarter: pending_rows.map { |data| data[:quarter_name] }.uniq,
+          month: pending_rows.map { |data| data[:month] }.uniq,
+          status: "approved"
+        )
+        .pluck(:employee_detail_id, :financial_year, :quarter, :month, :observer_level)
+        .to_set
+    end
+    observer_names_by_code = observer_names_by_code_for(employee_details)
+
+    monthly_data.each_value do |data|
+      employee = data[:employee]
+      case data[:status]
+      when "pending"
+        pending_observer_level = observer_levels_for(employee).find do |observer_level|
+          !approved_observer_keys.include?([
+            employee.id,
+            data[:financial_year],
+            data[:quarter_name],
+            data[:month],
+            observer_level
+          ])
+        end
+
+        if pending_observer_level.present?
+          observer_code = employee.public_send(pending_observer_level).to_s.strip.downcase
+          data[:status_reviewer_role] = observer_menu_title(pending_observer_level)
+          data[:status_reviewer_name] = observer_names_by_code[observer_code].presence || employee.public_send(pending_observer_level).presence || "-"
+        else
+          data[:status_reviewer_role] = "L1 Manager"
+          data[:status_reviewer_name] = employee.l1_employer_name.presence || employee.l1_code.presence || "-"
+        end
+      when "l1_approved", "l1_returned"
+        data[:status_reviewer_role] = "L1 Manager"
+        data[:status_reviewer_name] = employee.l1_employer_name.presence || employee.l1_code.presence || "-"
+      when "l2_approved", "l2_returned"
+        data[:status_reviewer_role] = "L2 Manager"
+        data[:status_reviewer_name] = employee.l2_employer_name.presence || employee.l2_code.presence || "-"
+      end
+    end
+
+    monthly_data
   end
 
   def apply_admin_status_filter(monthly_data, status_filter)
@@ -2741,7 +2793,7 @@ end
       observer_level: observer_level,
       financial_year: selected_year,
       quarter: params[:quarter].presence,
-      month: normalize_month_param(params[:month])
+      month: nil
     )
   end
 
@@ -2750,7 +2802,7 @@ end
       sheet_name: "Submission Status",
       headers: [
         "Employee Code", "Name", "Department", "Financial Year", "Month", "Quarter",
-        "L1 Manager", "% Progress", "Status"
+        "Reviewer Name", "Reviewer Role", "% Progress", "Status"
       ],
       rows: monthly_data.values.map do |data|
         employee = data[:employee]
@@ -2761,7 +2813,8 @@ end
           data[:financial_year].presence || "-",
           data[:month_label],
           data[:quarter_name],
-          employee.l1_employer_name,
+          data[:status_reviewer_name].presence || "-",
+          data[:status_reviewer_role].presence || "-",
           data[:progress_value].nil? ? "-" : "#{data[:progress]}%",
           data[:status_config][:text]
         ]
@@ -2797,7 +2850,7 @@ end
     build_tabular_xlsx(
       sheet_name: observer_menu_title(observer_level),
       headers: [
-        "Employee Code", "Name", "Department", "Financial Year", "Quarter", "Month",
+        "Employee Code", "Name", "Department", "Financial Year", "Quarter", "Observer Name",
         "Calculated %", "Status"
       ],
       rows: rows.map do |row|
@@ -2808,7 +2861,7 @@ end
           employee.department.presence || "-",
           row[:financial_year],
           row[:quarter_label],
-          row[:month_label],
+          row[:observer_name],
           "#{row[:calculated_percentage]}%",
           observer_row_status_label(row[:observer_review])
         ]
