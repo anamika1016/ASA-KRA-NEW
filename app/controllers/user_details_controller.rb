@@ -32,7 +32,7 @@ class UserDetailsController < ApplicationController
     set_financial_year_context
     scope = target_details_scope
 
-    @user_details = UserDetail.deduplicate_manual_kri_rows(scope.page(params[:page]).per(100).load)
+    @user_details = scope.page(params[:page]).per(100).load
     @target_reviewer_badges = target_reviewer_badges(@user_details)
   end
 
@@ -92,9 +92,7 @@ class UserDetailsController < ApplicationController
         # Department dropdowns use one row per department name, while imported KRIs are
         # stored on employee-specific department rows. Resolve by department name so the
         # selected employee's actual KRI rows are shown dynamically.
-        @user_details = UserDetail.deduplicate_manual_kri_rows(
-          user_details_scope.order("user_details.id ASC").to_a
-        )
+        @user_details = user_details_scope.order("user_details.id ASC").to_a
         @activity_detail_rows = @user_details.filter_map do |detail|
           activity = detail.activity
           activity ? [ activity, detail ] : nil
@@ -514,8 +512,6 @@ class UserDetailsController < ApplicationController
       @employee_detail = nil
     end
 
-    @user_details = UserDetail.deduplicate_manual_kri_rows(@user_details)
-
     set_active_month_context(@user_details, default_to_first: false)
     set_manual_kri_month_context
     @achievement_entry_locked = current_user.role != "hod" && @selected_month.present? && achievement_entry_locked_for_month?(@user_details, @selected_month)
@@ -548,8 +544,6 @@ class UserDetailsController < ApplicationController
       @employee_detail = nil
       @user_details = UserDetail.none
     end
-
-    @user_details = UserDetail.deduplicate_manual_kri_rows(@user_details)
 
     set_active_month_context(@user_details, include_all_months: true)
     if params[:month].blank?
@@ -631,12 +625,14 @@ class UserDetailsController < ApplicationController
 
             if selected_submission_month.present?
               existing_manual_kri_count = manual_kri_count_for_month(employee_detail.id, financial_year_for_lock, selected_submission_month)
-              if existing_manual_kri_count + new_target_entries.size > MAX_MANUAL_KRI_ROWS
+              remaining_slots = [ MAX_MANUAL_KRI_ROWS - existing_manual_kri_count, 0 ].max
+              if new_target_entries.size > remaining_slots
                 errors << "You can add only #{MAX_MANUAL_KRI_ROWS} key result indicator rows per month (#{short_month_label(selected_submission_month)})."
               end
+              new_target_entries = new_target_entries.first(remaining_slots)
             end
 
-            new_target_entries.first(MAX_MANUAL_KRI_ROWS).each do |target_params|
+            new_target_entries.each do |target_params|
               activity_name = normalize_import_display_value(target_params[:activity_name] || target_params["activity_name"])
               next if activity_name.blank?
 
@@ -650,39 +646,22 @@ class UserDetailsController < ApplicationController
                 next
               end
 
-              # A successful AJAX submission used to leave the unsaved-looking row in
-              # the browser. A second submit of that same row then created another
-              # Activity/UserDetail pair. Treat an identical manual KRI for this
-              # employee, year and month as the same row so retries are idempotent.
-              existing_user_detail = UserDetail.joins(:activity)
-                                               .where(
-                                                 employee_detail_id: employee_detail.id,
-                                                 financial_year: financial_year,
-                                                 activities: { theme_name: MANUAL_KRI_THEME }
-                                               )
-                                               .where("LOWER(TRIM(activities.activity_name)) = ?", activity_name.downcase)
-                                               .find { |detail| manual_kri_has_target_for_month?(detail, selected_submission_month) }
+              activity = department.activities.build(
+                activity_name: activity_name,
+                unit: unit,
+                annual_target_fy: annual_target_fy,
+                theme_name: MANUAL_KRI_THEME
+              )
+              activity.save!
 
-              if existing_user_detail
-                user_detail = existing_user_detail
-              else
-                activity = department.activities.build(
-                  activity_name: activity_name,
-                  unit: unit,
-                  annual_target_fy: annual_target_fy,
-                  theme_name: MANUAL_KRI_THEME
-                )
-                activity.save!
-
-                user_detail = UserDetail.create!(
-                  department_id: department.id,
-                  activity_id: activity.id,
-                  employee_detail_id: employee_detail.id,
-                  financial_year: financial_year,
-                  **month_data
-                )
-                target_count += 1
-              end
+              user_detail = UserDetail.create!(
+                department_id: department.id,
+                activity_id: activity.id,
+                employee_detail_id: employee_detail.id,
+                financial_year: financial_year,
+                **month_data
+              )
+              target_count += 1
 
               new_achievements = target_params[:achievements] || target_params["achievements"] || {}
               new_achievements = new_achievements.to_unsafe_h if new_achievements.respond_to?(:to_unsafe_h)
@@ -2268,11 +2247,8 @@ class UserDetailsController < ApplicationController
     UserDetail.joins(:activity)
               .where(employee_detail_id: employee_detail_id, financial_year: financial_year)
               .where(activities: { theme_name: MANUAL_KRI_THEME })
-              .select("user_details.id", "user_details.#{month_key}", "activities.activity_name")
-              .select { |user_detail| manual_kri_has_target_for_month?(user_detail, month_key) }
-              .map { |user_detail| user_detail.activity_name.to_s.squish.downcase }
-              .uniq
-              .count
+              .select(:id, month_key)
+              .count { |user_detail| manual_kri_has_target_for_month?(user_detail, month_key) }
   end
 
   def manual_kri_month_data_for_submission(target_params, selected_month)
