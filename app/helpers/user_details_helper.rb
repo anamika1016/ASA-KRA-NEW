@@ -156,10 +156,19 @@ module UserDetailsHelper
     end
     calculated_percentage = submitted_quarter_calculated_percentage(employee_details, quarter)
 
-    latest_l1_remark = month_achievements
-      .filter_map(&:achievement_remark)
-      .select { |remark| remark.l1_remarks.present? }
-      .max_by(&:updated_at)
+    latest_l1_achievement = month_achievements
+      .select do |achievement|
+        achievement.achievement_remark&.l1_remarks.present? ||
+          achievement.achievement_remark&.l1_percentage.present? ||
+          achievement.l1_remarks.present? || achievement.l1_percentage.present?
+      end
+      .max_by do |achievement|
+        [ achievement.achievement_remark&.updated_at || achievement.updated_at, achievement.id ]
+      end
+    latest_l1_remark = latest_l1_achievement&.achievement_remark
+    l1_final_remarks = latest_l1_remark&.l1_remarks.presence || latest_l1_achievement&.l1_remarks.presence
+    l1_percentage = latest_l1_remark&.l1_percentage.presence || latest_l1_achievement&.l1_percentage.presence
+    l1_reviewer = submitted_reviewer_identity(employee_detail.l1_code, employee_detail.l1_employer_name)
 
     observer_summaries = ApplicationHelper::OBSERVER_LEVELS.filter_map do |observer_level|
       next unless observer_assigned?(employee_detail, observer_level)
@@ -175,6 +184,7 @@ module UserDetailsHelper
       {
         level: observer_level,
         label: observer_column_label(observer_level),
+        reviewer_name: submitted_reviewed_by_name(review&.reviewed_by),
         final_remarks: review&.final_remarks,
         status: review&.status
       }
@@ -190,17 +200,39 @@ module UserDetailsHelper
       month_label: short_month_label(month),
       quarter: quarter,
       calculated_percentage: calculated_percentage,
-      l1_name: employee_detail.l1_employer_name,
-      l1_final_remarks: latest_l1_remark&.l1_remarks,
-      l1_percentage: latest_l1_remark&.l1_percentage,
+      l1_name: l1_reviewer[:name],
+      l1_code: l1_reviewer[:code],
+      l1_final_remarks: l1_final_remarks,
+      l1_percentage: l1_percentage,
       observer_summaries: observer_summaries,
       quarterly_pli: {
         quarter: quarter,
         final_percentage: quarterly_pli&.final_percentage,
         final_remarks: quarterly_pli&.final_remarks,
+        reviewer_name: submitted_reviewed_by_name(quarterly_pli&.reviewed_by),
         status: quarterly_pli&.status
       }
     }
+  end
+
+  def submitted_reviewer_identity(raw_code, fallback_name = nil)
+    code = raw_code.to_s.strip
+    normalized_code = code.split(/\s+-\s+/, 2).first.to_s.strip
+    reviewer = if normalized_code.present?
+      EmployeeDetail.where("LOWER(TRIM(employee_code)) = ?", normalized_code.downcase).first
+    end
+
+    {
+      name: reviewer&.employee_name.to_s.strip.presence || fallback_name.to_s.strip.presence,
+      code: reviewer&.employee_code.to_s.strip.presence || normalized_code.presence
+    }
+  end
+
+  def submitted_reviewed_by_name(user)
+    return nil if user.blank?
+
+    employee = EmployeeDetail.where("LOWER(TRIM(employee_code)) = ?", user.employee_code.to_s.strip.downcase).first
+    employee&.employee_name.to_s.strip.presence || user.email.to_s.split("@").first.to_s.titleize.presence
   end
 
   def submitted_quarter_calculated_percentage(employee_details, quarter)

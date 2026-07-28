@@ -270,20 +270,20 @@
             ));
 
             cards.push(percentageCard(
-              'L1 %',
+              `L1 %${summary.l1_name ? ` - ${summary.l1_name}` : ''}`,
               summary.l1_percentage,
               'border-yellow-200 bg-yellow-50'
             ));
 
             cards.push(percentageCard(
-              'Final PLI %',
+              'PLI %',
               pli.final_percentage,
               'border-teal-200 bg-teal-50'
             ));
 
             observers.forEach((observer) => {
               const card = remarkCard(
-                `${observer.label} Final Remarks`,
+                `${observer.label} PLI Remarks${observer.reviewer_name ? ` - ${observer.reviewer_name}` : ''}`,
                 observer.final_remarks,
                 'border-sky-200 bg-sky-50'
               );
@@ -291,14 +291,14 @@
             });
 
             const l1Card = remarkCard(
-              `L1 Final Remarks${summary.l1_name ? ` - ${summary.l1_name}` : ''}`,
+              `L1 Remarks${summary.l1_name ? ` - ${summary.l1_name}` : ''}${summary.l1_code ? ` (${summary.l1_code})` : ''}`,
               summary.l1_final_remarks,
               'border-yellow-200 bg-yellow-50'
             );
             if (l1Card) cards.push(l1Card);
 
             const pliCard = remarkCard(
-              `Quality PLI Final Remarks${pli.quarter ? ` - ${pli.quarter}` : ''}`,
+              `PLI Remarks${pli.reviewer_name ? ` - ${pli.reviewer_name}` : ''}${pli.quarter ? ` (${pli.quarter})` : ''}`,
               pli.final_remarks,
               'border-teal-200 bg-teal-50'
             );
