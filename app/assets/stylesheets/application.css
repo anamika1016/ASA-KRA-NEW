@@ -39,6 +39,28 @@ body.sidebar-expanded #hs-application-sidebar {
   transform: translateX(0) !important;
 }
 
+@media (min-width: 1024px) {
+  body.sidebar-expanded .sidebar-access-page {
+    box-sizing: border-box;
+    margin-left: var(--app-sidebar-width) !important;
+    width: calc(100% - var(--app-sidebar-width)) !important;
+  }
+
+  body.sidebar-collapsed .sidebar-access-page {
+    box-sizing: border-box;
+    margin-left: var(--app-sidebar-collapsed-width) !important;
+    width: calc(100% - var(--app-sidebar-collapsed-width)) !important;
+  }
+}
+
+@media (max-width: 1023px) {
+  .sidebar-access-page {
+    box-sizing: border-box;
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
+}
+
 .app-sidebar-toggle {
   position: fixed;
   top: 1rem;

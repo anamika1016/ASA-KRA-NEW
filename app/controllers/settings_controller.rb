@@ -3,7 +3,6 @@ class SettingsController < ApplicationController
   before_action :set_user
 
   def show
-    # Settings page - show user profile and settings
   end
 
   def update
@@ -46,6 +45,9 @@ class SettingsController < ApplicationController
 
   def set_user
     @user = current_user
+    @employee_detail = portal_employee_detail_for(@user)
+    @profile_name = @employee_detail&.employee_name.to_s.strip.presence || @user.email.to_s.split("@").first.to_s.titleize
+    @reviewer_assignments = profile_reviewer_assignments(@employee_detail)
   end
 
   def user_params
@@ -54,5 +56,33 @@ class SettingsController < ApplicationController
 
   def password_params
     params.require(:user).permit(:current_password, :password, :password_confirmation)
+  end
+
+  def profile_reviewer_assignments(employee)
+    return [] if employee.blank?
+
+    assignments = []
+    l1 = reviewer_details(employee.l1_code, fallback_name: employee.l1_employer_name)
+    assignments << l1.merge(label: "L1 Manager") if l1
+
+    EmployeeDetail::OBSERVER_CODE_FIELDS.each_with_index do |field, index|
+      reviewer = reviewer_details(employee.public_send(field))
+      assignments << reviewer.merge(label: "Observer #{index + 1}") if reviewer
+    end
+    assignments
+  end
+
+  def reviewer_details(raw_code, fallback_name: nil)
+    code = raw_code.to_s.strip
+    return nil unless EmployeeDetail.assigned_code?(code)
+
+    normalized_code = code.split(/\s+-\s+/, 2).first.to_s.strip
+    reviewer = EmployeeDetail.where("LOWER(TRIM(employee_code)) = ?", normalized_code.downcase).first ||
+               EmployeeDetail.where("LOWER(employee_code) LIKE ?", "#{normalized_code.downcase}%").first
+    name = reviewer&.employee_name.to_s.strip.presence || fallback_name.to_s.strip.presence
+    display_code = reviewer&.employee_code.to_s.strip.presence || normalized_code.presence
+    return nil if name.blank? || display_code.blank?
+
+    { name: name, code: display_code }
   end
 end

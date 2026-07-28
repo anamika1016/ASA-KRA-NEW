@@ -1,0 +1,146 @@
+<% total_employees = @employees.size %>
+
+<div class="sidebar-access-page min-w-0 overflow-hidden px-3 sm:px-5 py-5">
+  <div class="w-full min-w-0 max-w-full overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+    <div class="border-b border-gray-200 bg-gray-50/80 p-5">
+      <%= form_with url: employee_sidebar_accesses_path, method: :get, local: true, class: "flex flex-col gap-3 sm:flex-row" do |form| %>
+        <div class="relative flex-1">
+          <svg class="absolute left-3 top-1/2 size-5 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path>
+          </svg>
+          <%= form.search_field :q, value: @query, placeholder: "Employee code ya employee name search karein...", class: "w-full rounded-xl border border-gray-300 bg-white py-3 pl-11 pr-4 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" %>
+        </div>
+        <%= form.submit "Search Employee", class: "cursor-pointer rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700" %>
+        <% if @query.present? %>
+          <%= link_to "Clear", employee_sidebar_accesses_path, class: "rounded-xl border border-gray-300 bg-white px-5 py-3 text-center text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
+        <% end %>
+      <% end %>
+    </div>
+
+    <%= form_with url: bulk_update_employee_sidebar_accesses_path, method: :patch, local: true, id: "sidebar-access-form" do %>
+      <%= hidden_field_tag :q, @query %>
+
+      <div class="border-b border-gray-200 bg-white px-5 py-4">
+        <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div class="flex flex-wrap items-center gap-3">
+            <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100">
+              <%= check_box_tag :select_all, "1", false, id: "select-all-employees", class: "size-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" %>
+              Select all <%= total_employees %> employees
+            </label>
+            <span id="selected-count" class="rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">0 selected</span>
+          </div>
+
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div class="flex flex-wrap items-center gap-2 rounded-xl bg-gray-50 p-2">
+              <span class="px-1 text-xs font-bold uppercase tracking-wide text-gray-500">Menus:</span>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm">
+                <%= check_box_tag "menu_keys[]", "achievement_form", true, class: "size-4 rounded text-indigo-600" %> Achievement Form
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm">
+                <%= check_box_tag "menu_keys[]", "submitted_targets", true, class: "size-4 rounded text-indigo-600" %> Submitted Targets
+              </label>
+              <% [["observer_1", "Observer 1"], ["observer_2", "Observer 2"], ["observer_3", "Observer 3"], ["observer_4", "Observer 4"], ["l1", "L1 Details"], ["quarterly_pli", "Quarterly PLI"]].each do |menu_key, label| %>
+                <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm">
+                  <%= check_box_tag "menu_keys[]", menu_key, false, class: "size-4 rounded text-indigo-600" %> <%= label %>
+                </label>
+              <% end %>
+            </div>
+            <div class="flex gap-2">
+              <%= button_tag "Make Active", name: :active, value: "1", class: "rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700" %>
+              <%= button_tag "Make Inactive", name: :active, value: "0", class: "rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-rose-700" %>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <% access_menus = [["achievement_form", "achievement_form_active", "Achievement Form"], ["submitted_targets", "submitted_targets_active", "Submitted Targets"], ["observer_1", "observer_1_active", "Observer 1"], ["observer_2", "observer_2_active", "Observer 2"], ["observer_3", "observer_3_active", "Observer 3"], ["observer_4", "observer_4_active", "Observer 4"], ["l1", "l1_active", "L1 Details"], ["quarterly_pli", "quarterly_pli_active", "Quarterly PLI"]] %>
+      <div class="w-full overflow-x-auto">
+        <table class="w-full min-w-[1180px] table-fixed border-collapse">
+          <colgroup>
+            <col class="w-10"><col class="w-48"><col class="w-24">
+            <% access_menus.each do %><col class="w-28"><% end %>
+          </colgroup>
+          <thead class="bg-slate-50">
+            <tr class="border-b border-gray-200">
+              <th class="px-3 py-3"><input type="checkbox" id="check-visible-employees" class="size-4 rounded border-gray-300 text-indigo-600" aria-label="Select employees shown in list"></th>
+              <th class="px-3 py-3 text-left text-xs font-bold uppercase tracking-wide text-gray-500">Employee Name</th>
+              <th class="px-3 py-3 text-left text-xs font-bold uppercase tracking-wide text-gray-500">Code</th>
+              <% access_menus.each do |_, _, label| %>
+                <th class="px-1 py-3 text-center text-[10px] font-bold uppercase tracking-wide text-gray-500"><%= label %></th>
+              <% end %>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100 bg-white">
+            <% @employees.each do |employee| %>
+              <% access = @accesses[employee.id] %>
+              <tr class="hover:bg-indigo-50/40">
+                <td class="px-3 py-2.5 text-center"><%= check_box_tag "employee_ids[]", employee.id, false, class: "employee-checkbox size-4 rounded border-gray-300 text-indigo-600" %></td>
+                <td class="px-3 py-2.5"><div class="truncate text-sm font-semibold text-gray-900" title="<%= employee.employee_name %>"><%= employee.employee_name.presence || "Employee" %></div></td>
+                <td class="px-3 py-2.5"><span class="rounded bg-gray-100 px-2 py-1 font-mono text-xs font-semibold text-gray-700"><%= employee.employee_code %></span></td>
+                <% access_menus.each do |menu_key, attribute, _label| %>
+                  <% menu_active = access.nil? || access.public_send(attribute) %>
+                  <td class="px-1 py-2.5 text-center">
+                    <%= button_tag name: :direct_toggle, value: "#{employee.id}:#{menu_key}", class: "inline-flex items-center gap-1 rounded-full border px-1.5 py-1 text-[10px] font-semibold leading-none #{menu_active ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-rose-300 bg-rose-50 text-rose-700'}", title: "Click karke #{menu_active ? 'Inactive' : 'Active'} karein" do %>
+                      <span class="relative h-4 w-7 rounded-full <%= menu_active ? 'bg-emerald-500' : 'bg-gray-300' %>"><span class="absolute top-0.5 size-3 rounded-full bg-white shadow <%= menu_active ? 'right-0.5' : 'left-0.5' %>"></span></span>
+                      <%= menu_active ? "On" : "Off" %>
+                    <% end %>
+                  </td>
+                <% end %>
+              </tr>
+            <% end %>
+            <% if @employees.empty? %>
+              <tr><td colspan="11" class="px-6 py-16 text-center text-sm text-gray-500">No employee found.</td></tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% end %>
+  </div>
+</div>
+
+<style>
+  @media (min-width: 1024px) {
+    body.sidebar-expanded .sidebar-access-page {
+      box-sizing: border-box !important;
+      margin-left: 16rem !important;
+      width: calc(100vw - 16rem) !important;
+    }
+    body.sidebar-collapsed .sidebar-access-page {
+      box-sizing: border-box !important;
+      margin-left: 5.5rem !important;
+      width: calc(100vw - 5.5rem) !important;
+    }
+  }
+</style>
+
+<script>
+  document.addEventListener("turbo:load", function () {
+    const visibleToggle = document.getElementById("check-visible-employees");
+    const allToggle = document.getElementById("select-all-employees");
+    const employeeBoxes = Array.from(document.querySelectorAll(".employee-checkbox"));
+    const selectedCount = document.getElementById("selected-count");
+
+    const updateCount = () => {
+      const count = allToggle && allToggle.checked ? <%= total_employees %> : employeeBoxes.filter((box) => box.checked).length;
+      if (selectedCount) selectedCount.textContent = `${count} selected`;
+    };
+
+    employeeBoxes.forEach((box) => box.addEventListener("change", () => {
+      if (allToggle) allToggle.checked = false;
+      if (visibleToggle) visibleToggle.checked = employeeBoxes.length > 0 && employeeBoxes.every((item) => item.checked);
+      updateCount();
+    }));
+
+    if (visibleToggle) visibleToggle.addEventListener("change", () => {
+      employeeBoxes.forEach((box) => box.checked = visibleToggle.checked);
+      if (allToggle) allToggle.checked = false;
+      updateCount();
+    });
+
+    if (allToggle) allToggle.addEventListener("change", () => {
+      employeeBoxes.forEach((box) => box.checked = allToggle.checked);
+      if (visibleToggle) visibleToggle.checked = allToggle.checked;
+      updateCount();
+    });
+  });
+</script>

@@ -39,7 +39,14 @@ class ApplicationController < ActionController::Base
     return false if user.blank?
     return true if user.hod? || user.admin?
 
-    SidebarMenuSetting.active_for?(menu_key)
+    SidebarMenuSetting.active_for?(menu_key) && employee_menu_access_enabled?(menu_key, user)
+  end
+
+  def employee_menu_access_enabled?(menu_key, user = current_user)
+    return false if user.blank?
+    return true if user.hod? || user.admin?
+
+    EmployeeSidebarAccess.enabled_for?(portal_employee_detail_for(user), menu_key)
   end
 
   def current_user_identity_code
@@ -177,5 +184,6 @@ class ApplicationController < ActionController::Base
   end
 
   helper_method :has_l1_responsibilities?, :has_l2_responsibilities?, :has_quarterly_pli_responsibilities?,
-                :l1_pending_reviews_count, :l1_pending_reviews?, :menu_access_enabled?
+                :l1_pending_reviews_count, :l1_pending_reviews?, :l1_assignment_exists?, :menu_access_enabled?,
+                :employee_menu_access_enabled?
 end

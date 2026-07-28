@@ -1,6 +1,12 @@
 # config/routes.rb
 
 Rails.application.routes.draw do
+  resources :employee_sidebar_accesses, only: [ :index ] do
+    collection do
+      patch :bulk_update
+    end
+  end
+
   # User-wise training assignment routes (HOD only)
   resources :user_training_assignments, only: [ :index, :show, :edit, :update ], param: :employee_detail_id do
     collection do

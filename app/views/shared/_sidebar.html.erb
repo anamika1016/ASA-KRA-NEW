@@ -177,7 +177,7 @@
 
           <!-- Employee Forms - Show for all employee types -->
           <% if current_user.employee? || current_user.l1_employer? || current_user.l2_employer? %>
-          <li class="hs-accordion" id="users-accordion">
+          <li class="hs-accordion" id="target-form-menu">
             <%= link_to user_details_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(user_details_path)} text-base text-gray-800 rounded-lg" do %>
               <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
                 <circle cx="12" cy="12" r="7.5" />
@@ -188,7 +188,8 @@
             <% end %>
           </li>
 
-          <li class="hs-accordion" id="users-accordion">
+          <% if employee_sidebar_menu_active?(:achievement_form) %>
+          <li class="hs-accordion" id="achievement-form-menu">
             <%= link_to get_user_detail_user_details_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(new_target_submission_path)} text-base text-gray-800 rounded-lg" do %>
               <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
                 <circle cx="12" cy="8" r="2.5" />
@@ -199,8 +200,10 @@
               <span class="font-semibold">Achievement Form</span>
             <% end %>
           </li>
+          <% end %>
 
-          <li class="hs-accordion" id="users-accordion">
+          <% if employee_sidebar_menu_active?(:submitted_targets) %>
+          <li class="hs-accordion" id="submitted-targets-menu">
             <%= link_to submitted_achievements_user_details_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(submitted_achievements_user_details_path)} text-base text-gray-800 rounded-lg" do %>
               <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
                 <path d="M7.5 12.5 10.5 15.5 16.5 9.5" />
@@ -210,6 +213,7 @@
               <span class="font-semibold">Submitted Targets</span>
             <% end %>
           </li>
+          <% end %>
           <% end %>
 
           <!-- HOD Only - Admin Functions -->
@@ -250,6 +254,16 @@
           <% end %>
 
           <% if current_user.hod? || current_user.admin? %>
+            <li class="hs-accordion" id="sidebar-access-menu">
+              <%= link_to employee_sidebar_accesses_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(employee_sidebar_accesses_path)} text-base text-gray-800 rounded-lg" do %>
+                <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                  <path d="M12 3.5 19 6v5.5c0 4.3-2.7 7.4-7 9-4.3-1.6-7-4.7-7-9V6Z" />
+                  <path d="M9 12h6M12 9v6" />
+                </svg>
+                <span class="font-semibold">Sidebar Access</span>
+              <% end %>
+            </li>
+
             <li class="hs-accordion" id="users-accordion">
               <%= link_to month_masters_path, class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(month_masters_path)} text-base text-gray-800 rounded-lg" do %>
                 <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">

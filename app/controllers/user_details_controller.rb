@@ -26,7 +26,19 @@ class UserDetailsController < ApplicationController
   end
 
   before_action :set_user_detail, only: [ :show, :edit, :update, :destroy ]
+  before_action :require_employee_sidebar_access!, only: [ :get_user_detail, :submit_achievements, :submitted_achievements ]
   load_and_authorize_resource except: [ :index, :new, :create, :get_user_detail, :get_activities, :bulk_create, :submit_achievements, :export, :import, :quarterly_edit_all, :update_quarterly_achievements, :test_sms, :view_sms_logs, :submitted_achievements ]
+
+  private
+
+  def require_employee_sidebar_access!
+    menu_key = action_name == "submitted_achievements" ? :submitted_targets : :achievement_form
+    return if employee_menu_access_enabled?(menu_key)
+
+    redirect_to root_path, alert: "This menu is inactive for your employee code."
+  end
+
+  public
 
   def index
     set_financial_year_context

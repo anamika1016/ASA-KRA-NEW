@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_07_17_010000) do
+ActiveRecord::Schema[8.0].define(version: 2026_07_28_000200) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -149,6 +149,21 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_17_010000) do
     t.index ["obs_code3"], name: "index_employee_details_on_obs_code3"
     t.index ["obs_code4"], name: "index_employee_details_on_obs_code4"
     t.index ["user_id"], name: "index_employee_details_on_user_id"
+  end
+
+  create_table "employee_sidebar_accesses", force: :cascade do |t|
+    t.bigint "employee_detail_id", null: false
+    t.boolean "achievement_form_active", default: true, null: false
+    t.boolean "submitted_targets_active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.boolean "observer_1_active", default: true, null: false
+    t.boolean "observer_2_active", default: true, null: false
+    t.boolean "observer_3_active", default: true, null: false
+    t.boolean "observer_4_active", default: true, null: false
+    t.boolean "l1_active", default: true, null: false
+    t.boolean "quarterly_pli_active", default: true, null: false
+    t.index ["employee_detail_id"], name: "index_employee_sidebar_accesses_on_employee_detail_id", unique: true
   end
 
   create_table "l1_pulse_assessments", force: :cascade do |t|
@@ -373,6 +388,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_17_010000) do
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "activities", "departments"
   add_foreign_key "employee_details", "users"
+  add_foreign_key "employee_sidebar_accesses", "employee_details"
   add_foreign_key "l1_pulse_assessments", "employee_details"
   add_foreign_key "l1_pulse_assessments", "users", column: "l1_user_id"
   add_foreign_key "observer_pli_reviews", "employee_details"

@@ -181,6 +181,24 @@ module ApplicationHelper
     observer_levels_for_user(current_user)
   end
 
+  # Sidebar visibility is based only on assignment. Employee access settings
+  # block the destination action, but never make the menu disappear.
+  def observer_levels_for_sidebar(user = current_user)
+    return [] if user.blank?
+    return OBSERVER_LEVELS if user.admin? || user.hod?
+
+    code = resolved_observer_identity_code(user).to_s.strip.downcase
+    return [] if code.blank?
+
+    OBSERVER_LEVELS.select do |observer_level|
+      EmployeeDetail.where(
+        "LOWER(TRIM(COALESCE(#{observer_level}, ''))) = :code OR LOWER(TRIM(COALESCE(#{observer_level}, ''))) LIKE :prefix",
+        code: code,
+        prefix: "#{code}%"
+      ).exists?
+    end
+  end
+
   def has_observer_pli_responsibilities?(observer_level = nil)
     return observer_levels_for_user(current_user).any? if observer_level.blank?
 
@@ -189,6 +207,10 @@ module ApplicationHelper
 
   def sidebar_menu_active?(menu_key)
     SidebarMenuSetting.active_for?(menu_key)
+  end
+
+  def employee_sidebar_menu_active?(menu_key)
+    employee_menu_access_enabled?(menu_key)
   end
 
   def observer_menu_active?(observer_level)
