@@ -117,6 +117,8 @@ Rails.application.routes.draw do
       patch :toggle_sidebar_menu
     end
      member do
+      get :kra_targets
+      get :export_kra_targets
       get :quarterly_pli_detail
       get :observer_pli_detail
       patch :approve

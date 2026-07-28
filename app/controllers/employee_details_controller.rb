@@ -5,7 +5,7 @@ require "set"
 
 class EmployeeDetailsController < ApplicationController
   before_action :set_employee_detail, only: [ :edit, :update, :destroy, :toggle_portal_status, :update_portal_role ]
-  load_and_authorize_resource except: [ :approve, :return, :l2_approve, :l2_return, :edit_l1, :edit_l2, :toggle_portal_status, :update_portal_role, :toggle_sidebar_menu, :bulk_update_portal_status, :bulk_destroy, :quarterly_pli, :export_quarterly_pli_xlsx, :quarterly_pli_detail, :save_quarterly_pli, :observer_1, :observer_2, :observer_3, :observer_4, :observer_pli_detail, :save_observer_pli, :submission_overview, :export_submission_overview_xlsx, :export_l1_xlsx, :export_observer_pli_xlsx ]
+  load_and_authorize_resource except: [ :approve, :return, :l2_approve, :l2_return, :edit_l1, :edit_l2, :toggle_portal_status, :update_portal_role, :toggle_sidebar_menu, :bulk_update_portal_status, :bulk_destroy, :quarterly_pli, :export_quarterly_pli_xlsx, :quarterly_pli_detail, :save_quarterly_pli, :observer_1, :observer_2, :observer_3, :observer_4, :observer_pli_detail, :save_observer_pli, :kra_targets, :export_kra_targets, :submission_overview, :export_submission_overview_xlsx, :export_l1_xlsx, :export_observer_pli_xlsx ]
 
   def index
     @employee_detail = EmployeeDetail.new
@@ -575,6 +575,34 @@ class EmployeeDetailsController < ApplicationController
 
     authorize! :read, @employee_detail
     prepare_employee_detail_show
+  end
+
+  # User-wise KRA target overview for L1 and Observer menus.
+  def kra_targets
+    load_kra_target_overview
+  rescue ActiveRecord::RecordNotFound
+    redirect_to root_path, alert: "Employee detail not found."
+  end
+
+  def export_kra_targets
+    return unless load_kra_target_overview
+
+    months = %w[april may june july august september october november december january february march]
+    headers = [ "S.No", "Key result indicators", "Unit of measurement", view_context.annual_target_fy_label(@selected_financial_year) ] +
+              months.map { |month| month.first(3).upcase }
+    rows = @kra_user_details.each_with_index.map do |detail, index|
+      [
+        index + 1,
+        detail.activity.activity_name,
+        detail.activity.unit.presence || "-",
+        view_context.annual_target_display(detail.activity),
+        *months.map { |month| view_context.clean_spreadsheet_display_value(detail.public_send(month)).presence || "-" }
+      ]
+    end
+    package = build_tabular_xlsx(sheet_name: "KRA Targets", headers: headers, rows: rows)
+    send_review_xlsx(package, [ "kra_targets", @employee_detail.employee_code, @selected_financial_year ])
+  rescue ActiveRecord::RecordNotFound
+    redirect_to root_path, alert: "Employee detail not found."
   end
 
   # Quarterly approval - approve all activities for a quarter
@@ -1372,6 +1400,33 @@ end
   end
 
   private
+
+  def load_kra_target_overview
+    @employee_detail = EmployeeDetail.find(params[:id])
+    @observer_level = params[:observer_level].to_s.presence
+
+    if @observer_level.present?
+      authorized = observer_pli_authorized?(@observer_level) &&
+                   observer_pli_employee_scope(@observer_level).where(id: @employee_detail.id).exists?
+      unless authorized
+        redirect_to root_path, alert: "You are not authorized to view this employee's KRA targets."
+        return false
+      end
+    else
+      authorize! :read, @employee_detail
+    end
+
+    @selected_financial_year = params[:financial_year].to_s.strip.presence
+    available_years = @employee_detail.user_details.where.not(financial_year: [ nil, "" ]).distinct.pluck(:financial_year).sort.reverse
+    @selected_financial_year ||= available_years.first || current_financial_year
+    @financial_year_options = (available_years + [ @selected_financial_year ]).compact.uniq
+    @kra_user_details = @employee_detail.user_details
+      .includes(:activity, :department)
+      .where(financial_year: @selected_financial_year)
+      .joins(:activity)
+      .order("activities.theme_name ASC", "activities.activity_name ASC")
+    true
+  end
 
   def load_observer_names_for_employee_list
     @observer_names_by_code = observer_names_by_code_for(@employee_details)
