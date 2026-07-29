@@ -126,6 +126,7 @@ Rails.application.routes.draw do
      member do
       get :kra_targets
       get :export_kra_targets
+      get :archived_detail
       get :quarterly_pli_detail
       get :observer_pli_detail
       patch :approve

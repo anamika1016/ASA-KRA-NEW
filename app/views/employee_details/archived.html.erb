@@ -31,6 +31,7 @@
               <th class="archive-th text-center">Quarterly PLI %</th>
               <th class="archive-th text-center">Status</th>
               <th class="archive-th text-center">Pending With</th>
+              <th class="archive-th text-center">Action</th>
               <th class="archive-th text-center">View KRA</th>
             </tr>
           </thead>
@@ -69,13 +70,20 @@
                   </div>
                 </td>
                 <td class="archive-td text-center">
+                  <% if row[:submitted_months].any? %>
+                    <%= link_to "View Details", archived_detail_employee_detail_path(row[:employee], financial_year: row[:financial_year], quarter: row[:quarter]), class: "inline-flex items-center px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg shadow-sm transition-all" %>
+                  <% else %>
+                    <span class="text-gray-400 text-sm">Not filled yet</span>
+                  <% end %>
+                </td>
+                <td class="archive-td text-center">
                   <%= link_to kra_targets_employee_detail_path(row[:employee], financial_year: row[:financial_year], source: "archived", quarter: row[:quarter]), class: "kra-eye-button", title: "View complete KRA targets", aria: { label: "View KRA for #{row[:employee].employee_name}" } do %>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></svg>
                   <% end %>
                 </td>
               </tr>
             <% end %>
-            <% if @archived_rows.empty? %><tr><td colspan="10" class="px-6 py-12 text-center text-gray-500">No records found.</td></tr><% end %>
+            <% if @archived_rows.empty? %><tr><td colspan="11" class="px-6 py-12 text-center text-gray-500">No records found.</td></tr><% end %>
           </tbody>
         </table>
       </div>

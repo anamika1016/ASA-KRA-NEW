@@ -5,7 +5,7 @@ require "set"
 
 class EmployeeDetailsController < ApplicationController
   before_action :set_employee_detail, only: [ :edit, :update, :destroy, :toggle_portal_status, :update_portal_role ]
-  load_and_authorize_resource except: [ :approve, :return, :l2_approve, :l2_return, :edit_l1, :edit_l2, :toggle_portal_status, :update_portal_role, :toggle_sidebar_menu, :bulk_update_portal_status, :bulk_destroy, :quarterly_pli, :export_quarterly_pli_xlsx, :quarterly_pli_detail, :save_quarterly_pli, :observer_1, :observer_2, :observer_3, :observer_4, :observer_pli_detail, :save_observer_pli, :kra_targets, :export_kra_targets, :submission_overview, :archived, :export_submission_overview_xlsx, :export_l1_xlsx, :export_observer_pli_xlsx ]
+  load_and_authorize_resource except: [ :show, :approve, :return, :l2_approve, :l2_return, :edit_l1, :edit_l2, :toggle_portal_status, :update_portal_role, :toggle_sidebar_menu, :bulk_update_portal_status, :bulk_destroy, :quarterly_pli, :export_quarterly_pli_xlsx, :quarterly_pli_detail, :archived_detail, :save_quarterly_pli, :observer_1, :observer_2, :observer_3, :observer_4, :observer_pli_detail, :save_observer_pli, :kra_targets, :export_kra_targets, :submission_overview, :archived, :export_submission_overview_xlsx, :export_l1_xlsx, :export_observer_pli_xlsx ]
 
   def index
     @employee_detail = EmployeeDetail.new
@@ -548,6 +548,36 @@ class EmployeeDetailsController < ApplicationController
     end
   end
 
+  def archived_detail
+    unless current_user.hod? || current_user.admin? || employee_menu_access_enabled?(:archived)
+      redirect_to root_path, alert: "You are not authorized to view KRA History."
+      return
+    end
+
+    @financial_year = params[:financial_year].to_s.strip
+    @quarter = params[:quarter].to_s.strip
+    @employee_detail = EmployeeDetail.includes(
+      :quarterly_pli_reviews,
+      user_details: [ :activity, :department, achievements: :achievement_remark ]
+    ).find_by(id: params[:id])
+
+    if @employee_detail.blank? || @financial_year.blank? || !get_all_quarters.include?(@quarter)
+      redirect_to archived_employee_details_path, alert: "Invalid KRA History record."
+      return
+    end
+
+    @detail_payload = quarter_pli_payload_for(@employee_detail, @financial_year, @quarter, require_ready: false)
+    unless @detail_payload
+      redirect_to archived_employee_details_path(financial_year: @financial_year, quarter: @quarter), alert: "No submitted KRA data found."
+      return
+    end
+
+    @quarter_label = "#{@quarter} (#{@detail_payload[:months].map { |month| month[:label] }.join('-')})"
+    @review = @employee_detail.quarterly_pli_reviews.find do |review|
+      review.financial_year == @financial_year && review.quarter == @quarter && review.status == "approved"
+    end
+  end
+
   def export_submission_overview_xlsx
     unless current_user.hod? || current_user.admin?
       redirect_to root_path, alert: "You are not authorized to export Submission Status."
@@ -615,7 +645,14 @@ class EmployeeDetailsController < ApplicationController
       return
     end
 
-    authorize! :read, @employee_detail
+    if params[:source] == "archived"
+      unless current_user.hod? || current_user.admin? || employee_menu_access_enabled?(:archived)
+        redirect_to root_path, alert: "You are not authorized to view KRA History."
+        return
+      end
+    else
+      authorize! :read, @employee_detail
+    end
     prepare_employee_detail_show
   end
 
@@ -2831,7 +2868,14 @@ end
   def archived_pending_with(submitted_months, quarterly_review)
     if quarterly_review&.status == "approved"
       reviewer = quarterly_review.reviewed_by
-      return [ { role: "Completed", name: reviewer&.email, code: reviewer&.employee_code } ]
+      reviewer_employee = if reviewer&.employee_code.present?
+        EmployeeDetail.find_by("LOWER(TRIM(employee_code)) = ?", reviewer.employee_code.to_s.strip.downcase)
+      end
+      return [ {
+        role: "Completed",
+        name: reviewer_employee&.employee_name.presence || reviewer&.employee_code.presence || "Reviewer",
+        code: reviewer_employee&.employee_code.presence || reviewer&.employee_code
+      } ]
     end
 
     return [ { role: "-", name: nil, code: nil } ] if submitted_months.empty?
