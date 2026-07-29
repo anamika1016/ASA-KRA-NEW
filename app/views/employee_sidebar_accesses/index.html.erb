@@ -39,7 +39,7 @@
               <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm">
                 <%= check_box_tag "menu_keys[]", "submitted_targets", true, class: "size-4 rounded text-indigo-600" %> Submitted Targets
               </label>
-              <% [["observer_1", "Observer 1"], ["observer_2", "Observer 2"], ["observer_3", "Observer 3"], ["observer_4", "Observer 4"], ["l1", "L1 Details"], ["quarterly_pli", "Quarterly PLI"], ["archived", "Archived"]].each do |menu_key, label| %>
+              <% [["observer_1", "Observer 1"], ["observer_2", "Observer 2"], ["observer_3", "Observer 3"], ["observer_4", "Observer 4"], ["l1", "L1 Details"], ["quarterly_pli", "Quarterly PLI"], ["archived", "KRA History"]].each do |menu_key, label| %>
                 <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm">
                   <%= check_box_tag "menu_keys[]", menu_key, false, class: "size-4 rounded text-indigo-600" %> <%= label %>
                 </label>
@@ -53,7 +53,7 @@
         </div>
       </div>
 
-      <% access_menus = [["achievement_form", "achievement_form_active", "Achievement Form"], ["submitted_targets", "submitted_targets_active", "Submitted Targets"], ["observer_1", "observer_1_active", "Observer 1"], ["observer_2", "observer_2_active", "Observer 2"], ["observer_3", "observer_3_active", "Observer 3"], ["observer_4", "observer_4_active", "Observer 4"], ["l1", "l1_active", "L1 Details"], ["quarterly_pli", "quarterly_pli_active", "Quarterly PLI"], ["archived", "archived_active", "Archived"]] %>
+      <% access_menus = [["achievement_form", "achievement_form_active", "Achievement Form"], ["submitted_targets", "submitted_targets_active", "Submitted Targets"], ["observer_1", "observer_1_active", "Observer 1"], ["observer_2", "observer_2_active", "Observer 2"], ["observer_3", "observer_3_active", "Observer 3"], ["observer_4", "observer_4_active", "Observer 4"], ["l1", "l1_active", "L1 Details"], ["quarterly_pli", "quarterly_pli_active", "Quarterly PLI"], ["archived", "archived_active", "KRA History"]] %>
       <div class="w-full overflow-x-auto">
         <table class="w-full min-w-[1180px] table-fixed border-collapse">
           <colgroup>

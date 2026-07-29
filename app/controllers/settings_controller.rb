@@ -46,8 +46,24 @@ class SettingsController < ApplicationController
   def set_user
     @user = current_user
     @employee_detail = portal_employee_detail_for(@user)
+    sync_login_identity_from_employee!
     @profile_name = @employee_detail&.employee_name.to_s.strip.presence || @user.email.to_s.split("@").first.to_s.titleize
+    @profile_email = @employee_detail&.employee_email.to_s.strip.presence || @user.email
     @reviewer_assignments = profile_reviewer_assignments(@employee_detail)
+  end
+
+  def sync_login_identity_from_employee!
+    return if @employee_detail.blank?
+
+    canonical_email = @employee_detail.employee_email.to_s.strip.downcase.presence
+    canonical_code = @employee_detail.employee_code.to_s.strip.presence
+    return if canonical_email.blank? || canonical_code.blank?
+    return if @user.email.to_s.strip.downcase == canonical_email && @user.employee_code.to_s.strip == canonical_code
+
+    @user.update!(email: canonical_email, employee_code: canonical_code)
+    @employee_detail.update_column(:user_id, @user.id) if @employee_detail.user_id != @user.id
+  rescue ActiveRecord::RecordInvalid => e
+    Rails.logger.error("Profile login identity sync failed for EmployeeDetail##{@employee_detail.id}: #{e.message}")
   end
 
   def user_params

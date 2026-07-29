@@ -513,7 +513,7 @@ class EmployeeDetailsController < ApplicationController
 
   def archived
     unless current_user.hod? || current_user.admin? || employee_menu_access_enabled?(:archived)
-      redirect_to root_path, alert: "You are not authorized to access Archived KRA."
+      redirect_to root_path, alert: "You are not authorized to access KRA History."
       return
     end
 
@@ -540,7 +540,7 @@ class EmployeeDetailsController < ApplicationController
 
   def archived_detail
     unless current_user.hod? || current_user.admin?
-      redirect_to root_path, alert: "You are not authorized to access Archived KRA."
+      redirect_to root_path, alert: "You are not authorized to access KRA History."
       return
     end
 
@@ -552,7 +552,7 @@ class EmployeeDetailsController < ApplicationController
     ).find_by(id: params[:id])
 
     if @employee_detail.blank? || @financial_year.blank? || !get_all_quarters.include?(@quarter)
-      redirect_to archived_employee_details_path, alert: "Invalid Archived KRA record."
+      redirect_to archived_employee_details_path, alert: "Invalid KRA History record."
       return
     end
 
