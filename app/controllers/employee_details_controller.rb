@@ -1821,10 +1821,10 @@ end
     return true if current_user.hod? || current_user.admin?
     return false unless menu_access_enabled?(:quarterly_pli)
 
-    code = current_user.employee_code.to_s.strip.downcase
-    code.present? && EmployeeDetail.where(
-      "LOWER(TRIM(COALESCE(l1_code, ''))) = ?",
-      code
+    codes = current_user_reviewer_codes
+    codes.any? && EmployeeDetail.where(
+      "LOWER(TRIM(COALESCE(l1_code, ''))) IN (?)",
+      codes
     ).exists?
   end
 
@@ -1832,10 +1832,10 @@ end
     scope = EmployeeDetail.order(Arel.sql("LOWER(employee_name) ASC"))
     return scope if current_user.hod? || current_user.admin?
 
-    code = current_user.employee_code.to_s.strip.downcase
-    return scope.none if code.blank? || !menu_access_enabled?(:quarterly_pli)
+    codes = current_user_reviewer_codes
+    return scope.none if codes.empty? || !menu_access_enabled?(:quarterly_pli)
 
-    scope.where("LOWER(TRIM(COALESCE(l1_code, ''))) = ?", code)
+    scope.where("LOWER(TRIM(COALESCE(l1_code, ''))) IN (?)", codes)
   end
 
   def build_observer_pli_index(observer_level)
@@ -1953,9 +1953,11 @@ end
     code = helpers.resolved_observer_identity_code(current_user)
     return scope.none if code.blank?
 
+    reviewer_codes = current_user.reviewer_identity_codes
+
     scope.where(
-      "LOWER(TRIM(COALESCE(#{observer_level}, ''))) = ?",
-      code.downcase
+      "LOWER(TRIM(COALESCE(#{observer_level}, ''))) IN (?)",
+      reviewer_codes
     )
   end
 

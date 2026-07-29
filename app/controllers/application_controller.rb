@@ -53,6 +53,10 @@ class ApplicationController < ActionController::Base
     current_user&.employee_code.to_s.strip.presence
   end
 
+  def current_user_reviewer_codes
+    current_user&.reviewer_identity_codes || []
+  end
+
   def current_user_identity_email
     current_user&.email.to_s.strip.presence
   end
@@ -73,7 +77,7 @@ class ApplicationController < ActionController::Base
     return EmployeeDetail.none unless current_user
 
     linked_employee = portal_employee_detail_for(current_user)
-    codes = [ current_user_identity_code, linked_employee&.employee_code ]
+    codes = [ *current_user_reviewer_codes, linked_employee&.employee_code ]
             .filter_map { |value| value.to_s.strip.downcase.presence }.uniq
     identities = [ current_user_identity_email, linked_employee&.employee_name, linked_employee&.employee_email ]
                  .filter_map { |value| value.to_s.strip.downcase.presence }.uniq

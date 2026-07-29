@@ -163,9 +163,11 @@ module ApplicationHelper
     code = resolved_observer_identity_code(user)
     return false if code.blank?
 
+    reviewer_codes = user.reviewer_identity_codes
+
     EmployeeDetail.where(
-      "LOWER(TRIM(COALESCE(#{observer_level}, ''))) = :code OR LOWER(TRIM(COALESCE(#{observer_level}, ''))) LIKE :code_prefix",
-      code: code.downcase,
+      "LOWER(TRIM(COALESCE(#{observer_level}, ''))) IN (:reviewer_codes) OR LOWER(TRIM(COALESCE(#{observer_level}, ''))) LIKE :code_prefix",
+      reviewer_codes: reviewer_codes,
       code_prefix: "#{code.downcase}%"
     ).exists?
   end
@@ -188,12 +190,13 @@ module ApplicationHelper
     return OBSERVER_LEVELS if user.admin? || user.hod?
 
     code = resolved_observer_identity_code(user).to_s.strip.downcase
+    reviewer_codes = user.reviewer_identity_codes
     return [] if code.blank?
 
     OBSERVER_LEVELS.select do |observer_level|
       EmployeeDetail.where(
-        "LOWER(TRIM(COALESCE(#{observer_level}, ''))) = :code OR LOWER(TRIM(COALESCE(#{observer_level}, ''))) LIKE :prefix",
-        code: code,
+        "LOWER(TRIM(COALESCE(#{observer_level}, ''))) IN (:reviewer_codes) OR LOWER(TRIM(COALESCE(#{observer_level}, ''))) LIKE :prefix",
+        reviewer_codes: reviewer_codes,
         prefix: "#{code}%"
       ).exists?
     end
@@ -398,9 +401,11 @@ module ApplicationHelper
       code = resolved_observer_identity_code(current_user)
       return [] if code.blank?
 
+      reviewer_codes = current_user.reviewer_identity_codes
+
       scope.where(
-        "LOWER(TRIM(COALESCE(#{observer_level}, ''))) = :code OR LOWER(TRIM(COALESCE(#{observer_level}, ''))) LIKE :code_prefix",
-        code: code.downcase,
+        "LOWER(TRIM(COALESCE(#{observer_level}, ''))) IN (:reviewer_codes) OR LOWER(TRIM(COALESCE(#{observer_level}, ''))) LIKE :code_prefix",
+        reviewer_codes: reviewer_codes,
         code_prefix: "#{code.downcase}%"
       ).includes(user_details: :achievements).to_a
     end

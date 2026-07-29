@@ -16,6 +16,13 @@ class User < ApplicationRecord
   ROLES = %w[employee hod admin l1_employer l2_employer]
   LOGIN_ROLES = %w[employee hod].freeze
 
+  # Some reviewer logins are responsible for assignments stored against other
+  # employee codes. Keep these delegations in one place so L1 and every
+  # observer level use the same access rules.
+  REVIEWER_CODE_DELEGATIONS = {
+    "papl095" => %w[840 002]
+  }.freeze
+
   # Auto-strip employee_code before save
   before_validation :sanitize_employee_code
   before_save :track_password_change, if: :will_save_change_to_encrypted_password?
@@ -49,6 +56,15 @@ class User < ApplicationRecord
 
   def l2_employer?
     role == "l2_employer"
+  end
+
+  def reviewer_identity_codes
+    normalized_code = employee_code.to_s.strip.downcase
+    return [] if normalized_code.blank?
+
+    ([ normalized_code ] + REVIEWER_CODE_DELEGATIONS.fetch(normalized_code, []))
+      .filter_map { |code| code.to_s.strip.downcase.presence }
+      .uniq
   end
 
   def self.find_for_database_authentication(warden_conditions)
