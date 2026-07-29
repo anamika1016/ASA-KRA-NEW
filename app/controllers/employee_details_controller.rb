@@ -536,8 +536,16 @@ class EmployeeDetailsController < ApplicationController
     history_rows.select! { |row| row[:quarter] == @selected_quarter } if @selected_quarter.present?
     history_rows.each { |row| row[:history_status] = archived_row_status(row) }
     @kra_history_counts = build_kra_history_counts(history_rows)
-    @archived_rows = history_rows.select { |row| row[:submitted_count].positive? }
-    @archived_rows.select! { |row| row[:history_status] == @selected_archived_status } if @selected_archived_status.present?
+    @archived_rows = if @selected_archived_status == "not_submitted"
+      history_rows.group_by { |row| row[:employee].id }.filter_map do |_employee_id, employee_rows|
+        next if employee_rows.any? { |row| row[:submitted_count].positive? }
+
+        employee_rows.first.merge(quarter_label: @selected_quarter.present? ? employee_rows.first[:quarter_label] : "No submission")
+      end
+    else
+      submitted_rows = history_rows.select { |row| row[:submitted_count].positive? }
+      @selected_archived_status.present? ? submitted_rows.select { |row| row[:history_status] == @selected_archived_status } : submitted_rows
+    end
   end
 
   def archived_detail
@@ -2852,6 +2860,8 @@ end
       reviewer = quarterly_review.reviewed_by
       return [ { role: "Completed", name: reviewer&.email, code: reviewer&.employee_code } ]
     end
+
+    return [ { role: "-", name: nil, code: nil } ] if submitted_months.empty?
 
     reviewers = submitted_months.filter_map do |month|
       employee = month[:employee]
