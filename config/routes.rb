@@ -116,6 +116,7 @@ Rails.application.routes.draw do
       get :observer_3
       get :observer_4
       get :submission_overview
+      get :archived
       get :export_submission_overview_xlsx
       get :export_l1_xlsx
       get :export_observer_pli_xlsx
@@ -125,6 +126,7 @@ Rails.application.routes.draw do
      member do
       get :kra_targets
       get :export_kra_targets
+      get :archived_detail
       get :quarterly_pli_detail
       get :observer_pli_detail
       patch :approve

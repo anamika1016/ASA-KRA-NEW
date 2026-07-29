@@ -50,7 +50,7 @@ class EmployeeSidebarAccessesController < ApplicationController
     end
 
     access = EmployeeSidebarAccess.find_or_initialize_by(employee_detail: employee)
-    current_status = access.new_record? ? true : access.public_send(attribute)
+    current_status = access.new_record? ? menu_key != "archived" : access.public_send(attribute)
     access.public_send("#{attribute}=", !current_status)
     access.save!
 

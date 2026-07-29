@@ -1,5 +1,7 @@
 <% months = %w[april may june july august september october november december january february march] %>
-<% back_path = if @observer_level.present?
+<% back_path = if @kra_source == "archived"
+                 archived_employee_details_path(financial_year: @selected_financial_year, quarter: params[:quarter])
+               elsif @observer_level.present?
                  observer_pli_index_path(@observer_level, financial_year: @selected_financial_year)
                else
                  l1_employee_details_path(financial_year: @selected_financial_year)
@@ -20,6 +22,7 @@
           <% if @financial_year_options.any? %>
             <%= form_with url: kra_targets_employee_detail_path(@employee_detail), method: :get, local: true, class: "flex items-center gap-3", data: { turbo: false } do %>
               <%= hidden_field_tag :source, @kra_source if @kra_source.present? %>
+              <%= hidden_field_tag :quarter, params[:quarter] if params[:quarter].present? %>
               <%= hidden_field_tag :observer_level, @observer_level if @observer_level.present? %>
               <%= label_tag :financial_year, "Financial year", class: "text-sm font-semibold text-gray-700" %>
               <%= select_tag :financial_year, options_for_select(@financial_year_options, @selected_financial_year),

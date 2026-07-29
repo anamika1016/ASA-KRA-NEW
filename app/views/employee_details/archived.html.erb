@@ -1,0 +1,110 @@
+<meta name="turbo-visit-control" content="reload">
+<div class="main-content sidebar-hidden bg-gray-50 min-h-screen" data-turbo="false">
+  <div class="min-h-screen pl-64 pr-4 pt-4 pb-12 overflow-x-auto bg-gradient-to-br from-gray-50 to-gray-100">
+    <div class="w-full bg-white p-8 rounded-xl shadow-xl border border-gray-200">
+      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-8 pb-4 border-b-2 border-gray-200">
+        <h2 class="text-3xl font-bold text-gray-800">Archived KRA</h2>
+
+        <div class="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+          <div class="relative">
+            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i class="fas fa-search text-gray-400"></i></div>
+            <input id="archiveSearch" type="search" placeholder="Search employees..." class="block w-full sm:w-64 pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+          </div>
+          <%= form_with url: archived_employee_details_path, method: :get, local: true, class: "flex flex-col sm:flex-row gap-3", data: { turbo: false } do %>
+            <%= select_tag :quarter, options_for_select([["All Quarters", ""]] + @quarter_options.map { |q| [q, q] }, @selected_quarter), class: "w-full sm:w-36 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500", onchange: "this.form.submit()" %>
+            <%= select_tag :financial_year, options_for_select([["All Financial Years", ""]] + @financial_year_options.map { |fy| [fy, fy] }, @selected_financial_year), class: "w-full sm:w-48 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500", onchange: "this.form.submit()" %>
+            <%= select_tag :status, options_for_select([["All Status", ""], ["Submitted", "submitted"], ["Pending", "pending"], ["Approved", "approved"], ["Not Submitted", "not_submitted"]], @selected_archived_status), class: "w-full sm:w-44 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500", onchange: "this.form.submit()" %>
+          <% end %>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto bg-white rounded-lg shadow-sm border border-gray-200">
+        <table id="archiveTable" class="min-w-[1320px] w-full divide-y divide-gray-300 text-sm">
+          <thead class="bg-gradient-to-r from-gray-800 to-gray-700">
+            <tr>
+              <th class="archive-th">Employee Code</th>
+              <th class="archive-th">Name</th>
+              <th class="archive-th">Department</th>
+              <th class="archive-th">Financial Year</th>
+              <th class="archive-th">Quarter</th>
+              <th class="archive-th text-center">% Progress</th>
+              <th class="archive-th text-center">Quarterly PLI %</th>
+              <th class="archive-th text-center">Status</th>
+              <th class="archive-th text-center">Pending With</th>
+              <th class="archive-th text-center">Action</th>
+              <th class="archive-th text-center">View KRA</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            <% @archived_rows.each_with_index do |row, index| %>
+              <% fully_submitted = row[:target_month_count].positive? && row[:submitted_count] == row[:target_month_count] %>
+              <% partially_submitted = row[:submitted_count].positive? && !fully_submitted %>
+              <tr class="<%= index.even? ? 'bg-white' : 'bg-gray-50' %> hover:bg-indigo-50 transition-colors duration-200">
+                <td class="archive-td text-gray-700"><%= row[:employee].employee_code %></td>
+                <td class="archive-td font-medium text-gray-900"><%= row[:employee].employee_name %></td>
+                <td class="archive-td text-gray-700"><%= row[:employee].department.presence || "-" %></td>
+                <td class="archive-td text-gray-700"><%= row[:financial_year].presence || "-" %></td>
+                <td class="archive-td"><span class="font-semibold text-indigo-700"><%= row[:quarter_label] %></span></td>
+                <td class="archive-td text-center">
+                  <% if row[:quarter_progress] == "-" %><span class="text-gray-400">-</span><% else %><span class="inline-flex items-center px-3 py-1 rounded bg-emerald-50 text-emerald-700 font-semibold"><%= row[:quarter_progress] %>%</span><% end %>
+                </td>
+                <td class="archive-td text-center">
+                  <% if row[:quarterly_review]&.status == "approved" && row[:quarterly_review].final_percentage.present? %><span class="inline-flex items-center px-3 py-1 rounded bg-blue-50 text-blue-700 font-semibold"><%= format("%.2f", row[:quarterly_review].final_percentage.to_f) %>%</span><% else %><span class="text-gray-400">-</span><% end %>
+                </td>
+                <td class="archive-td text-center">
+                  <% if row[:quarterly_review]&.status == "approved" %><span class="status-badge border-blue-300 bg-blue-50 text-blue-700">Approved</span>
+                  <% elsif fully_submitted %><span class="status-badge border-green-300 bg-green-50 text-green-700">Submitted</span>
+                  <% elsif partially_submitted %><span class="status-badge border-yellow-300 bg-yellow-50 text-yellow-700">Pending</span>
+                  <% else %><span class="status-badge border-gray-300 bg-gray-50 text-gray-600">Not Submitted</span><% end %>
+                </td>
+                <td class="archive-td text-center">
+                  <div class="flex flex-wrap justify-center gap-1.5">
+                    <% row[:pending_with].each do |reviewer| %>
+                      <span class="inline-flex flex-col rounded-lg border px-3 py-2 text-left text-xs <%= reviewer[:role] == 'Completed' ? 'border-green-300 bg-green-50 text-green-700' : 'border-blue-300 bg-blue-50 text-blue-700' %>">
+                        <strong><%= reviewer[:role] %></strong>
+                        <% if reviewer[:name].present? %><span class="mt-0.5 font-medium"><%= reviewer[:name] %></span><% end %>
+                        <% if reviewer[:code].present? %><span class="mt-0.5 opacity-75"><%= reviewer[:code] %></span><% end %>
+                      </span>
+                    <% end %>
+                  </div>
+                </td>
+                <td class="archive-td text-center">
+                  <% if row[:submitted_count].positive? %><%= link_to "View Details", archived_detail_employee_detail_path(row[:employee], financial_year: row[:financial_year], quarter: row[:quarter]), class: "inline-flex items-center px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg shadow-sm transition-all" %><% else %><span class="text-gray-400 text-sm">Not filled yet</span><% end %>
+                </td>
+                <td class="archive-td text-center">
+                  <%= link_to kra_targets_employee_detail_path(row[:employee], financial_year: row[:financial_year], source: "archived", quarter: row[:quarter]), class: "kra-eye-button", title: "View complete KRA targets", aria: { label: "View KRA for #{row[:employee].employee_name}" } do %>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></svg>
+                  <% end %>
+                </td>
+              </tr>
+            <% end %>
+            <% if @archived_rows.empty? %><tr><td colspan="11" class="px-6 py-12 text-center text-gray-500">No records found.</td></tr><% end %>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="summary-card border-blue-200 bg-blue-50 text-blue-800"><p>Total Quarter Records</p><strong><%= @archived_rows.size %></strong></div>
+        <div class="summary-card border-yellow-200 bg-yellow-50 text-yellow-800"><p>Not Submitted</p><strong><%= @archived_rows.count { |r| r[:submitted_count].zero? } %></strong></div>
+        <div class="summary-card border-orange-200 bg-orange-50 text-orange-800"><p>Pending Submission</p><strong><%= @archived_rows.count { |r| r[:submitted_count].positive? && r[:submitted_count] < r[:target_month_count] } %></strong></div>
+        <div class="summary-card border-green-200 bg-green-50 text-green-800"><p>Fully Submitted</p><strong><%= @archived_rows.count { |r| r[:target_month_count].positive? && r[:submitted_count] == r[:target_month_count] } %></strong></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .sidebar-hidden .min-h-screen { padding-left: 1rem !important; padding-right: 1rem !important; }
+  .main-content { margin-left: 240px; padding: 1rem; overflow-x: auto; }
+  .archive-th { padding: 1rem 1.25rem; text-align: left; color: white; font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; border-right: 1px solid #4b5563; white-space: nowrap; }
+  .archive-td { padding: 1rem 1.25rem; border-right: 1px solid #e5e7eb; vertical-align: middle; }
+  .status-badge { display: inline-flex; align-items: center; border-width: 1px; border-radius: 9999px; padding: .3rem .8rem; font-size: .75rem; font-weight: 600; white-space: nowrap; }
+  .summary-card { border-width: 1px; border-radius: .5rem; padding: 1rem 1.5rem; }
+  .summary-card p { font-size: .8rem; margin-bottom: .35rem; }
+  .summary-card strong { font-size: 1.5rem; }
+  .kra-eye-button { display: inline-flex; align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem; border-radius: 9999px; border: 1px solid #a5b4fc; background: #eef2ff; color: #4338ca; box-shadow: 0 2px 8px rgba(67,56,202,.18); transition: background-color .2s ease, transform .2s ease, box-shadow .2s ease; }
+  .kra-eye-button:hover { background: #c7d2fe; transform: scale(1.08); box-shadow: 0 4px 12px rgba(67,56,202,.25); }
+  .kra-eye-button svg { display: block; width: 1rem; height: 1rem; }
+  @media (max-width: 768px) { .main-content { margin-left: 0; padding: .5rem; } }
+</style>
+<script>(()=>{const i=document.getElementById('archiveSearch'),t=document.getElementById('archiveTable');if(!i||!t)return;i.addEventListener('input',()=>{const q=i.value.toLowerCase().trim();t.querySelectorAll('tbody tr').forEach(r=>r.style.display=!q||r.textContent.toLowerCase().includes(q)?'':'none')})})();</script>

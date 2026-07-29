@@ -136,19 +136,14 @@ scope :l1_pending_records, -> { where(status: [ "pending", "returned" ]) }
   end
 
   def matching_portal_user(normalized_email, normalized_code)
-    # Login is employee-code based, so the exact code account must win when an
-    # old/duplicate email account is linked to this EmployeeDetail row.
+    # The persisted association is authoritative, including when email and
+    # employee code are edited together.
+    linked_user = user
+    return linked_user if linked_user.present?
+
     code_account = User.find_by("lower(employee_code) = ?", normalized_code.downcase)
     return code_account if code_account.present?
 
-    linked_user = user
-    return linked_user if linked_user.present? && linked_user_matches?(linked_user, normalized_email, normalized_code)
-
     User.find_by("lower(email) = ?", normalized_email)
-  end
-
-  def linked_user_matches?(linked_user, normalized_email, normalized_code)
-    linked_user.email.to_s.strip.downcase == normalized_email ||
-      linked_user.employee_code.to_s.strip.downcase == normalized_code.downcase
   end
 end

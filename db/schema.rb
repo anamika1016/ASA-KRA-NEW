@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_07_29_000100) do
+ActiveRecord::Schema[8.0].define(version: 2026_07_29_000200) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -171,6 +171,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_29_000100) do
     t.boolean "observer_4_active", default: true, null: false
     t.boolean "l1_active", default: true, null: false
     t.boolean "quarterly_pli_active", default: true, null: false
+    t.boolean "archived_active", default: false, null: false
     t.index ["employee_detail_id"], name: "index_employee_sidebar_accesses_on_employee_detail_id", unique: true
   end
 

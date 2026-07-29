@@ -5,7 +5,7 @@ require "set"
 
 class EmployeeDetailsController < ApplicationController
   before_action :set_employee_detail, only: [ :edit, :update, :destroy, :toggle_portal_status, :update_portal_role ]
-  load_and_authorize_resource except: [ :approve, :return, :l2_approve, :l2_return, :edit_l1, :edit_l2, :toggle_portal_status, :update_portal_role, :toggle_sidebar_menu, :bulk_update_portal_status, :bulk_destroy, :quarterly_pli, :export_quarterly_pli_xlsx, :quarterly_pli_detail, :save_quarterly_pli, :observer_1, :observer_2, :observer_3, :observer_4, :observer_pli_detail, :save_observer_pli, :kra_targets, :export_kra_targets, :submission_overview, :export_submission_overview_xlsx, :export_l1_xlsx, :export_observer_pli_xlsx ]
+  load_and_authorize_resource except: [ :approve, :return, :l2_approve, :l2_return, :edit_l1, :edit_l2, :toggle_portal_status, :update_portal_role, :toggle_sidebar_menu, :bulk_update_portal_status, :bulk_destroy, :quarterly_pli, :export_quarterly_pli_xlsx, :quarterly_pli_detail, :archived_detail, :save_quarterly_pli, :observer_1, :observer_2, :observer_3, :observer_4, :observer_pli_detail, :save_observer_pli, :kra_targets, :export_kra_targets, :submission_overview, :archived, :export_submission_overview_xlsx, :export_l1_xlsx, :export_observer_pli_xlsx ]
 
   def index
     @employee_detail = EmployeeDetail.new
@@ -31,11 +31,16 @@ class EmployeeDetailsController < ApplicationController
   end
 
   def update
-    if @employee_detail.update(employee_detail_params)
-      redirect_to employee_details_path, notice: "Employee updated successfully."
-    else
-      render :edit, status: :unprocessable_entity
+    EmployeeDetail.transaction do
+      @employee_detail.update!(employee_detail_params)
+      @employee_detail.ensure_portal_user!
     end
+
+    redirect_to employee_details_path, notice: "Employee and login account updated successfully."
+  rescue ActiveRecord::RecordInvalid => e
+    Rails.logger.error("Employee update failed: #{e.message}")
+    flash.now[:alert] = "Update failed: #{e.record.errors.full_messages.to_sentence}"
+    render :edit, status: :unprocessable_entity
   end
 
   def destroy
@@ -480,7 +485,7 @@ class EmployeeDetailsController < ApplicationController
   end
 
   def submission_overview
-    unless current_user.hod? || current_user.admin?
+    unless current_user.hod? || current_user.admin? || employee_menu_access_enabled?(:archived)
       redirect_to root_path, alert: "You are not authorized to access this page."
       return
     end
@@ -504,6 +509,65 @@ class EmployeeDetailsController < ApplicationController
       financial_year: @selected_financial_year,
       status_filter: @selected_status_filter
     )
+  end
+
+  def archived
+    unless current_user.hod? || current_user.admin? || employee_menu_access_enabled?(:archived)
+      redirect_to root_path, alert: "You are not authorized to access Archived KRA."
+      return
+    end
+
+    @employee_details = EmployeeDetail.includes(
+      :quarterly_pli_reviews,
+      user_details: [ :activity, :department, achievements: :achievement_remark ]
+    ).order(Arel.sql("LOWER(employee_name) ASC"))
+    @selected_financial_year = params[:financial_year].presence
+    @selected_quarter = get_all_quarters.include?(params[:quarter]) ? params[:quarter] : nil
+    @selected_archived_status = %w[submitted pending approved not_submitted].include?(params[:status]) ? params[:status] : nil
+    @quarter_options = get_all_quarters
+    @archive_heading_months = @selected_quarter.present? ? get_quarter_months(@selected_quarter) : nil
+    @financial_year_options = %w[2026-2027 2027-2028 2028-2029]
+
+    monthly_data = build_admin_submission_overview_data(
+      @employee_details,
+      financial_year: @selected_financial_year
+    )
+    @archived_rows = build_archived_rows(monthly_data)
+    @archived_rows.select! { |row| row[:submitted_count].positive? }
+    @archived_rows.select! { |row| row[:quarter] == @selected_quarter } if @selected_quarter.present?
+    @archived_rows.select! { |row| archived_row_status(row) == @selected_archived_status } if @selected_archived_status.present?
+  end
+
+  def archived_detail
+    unless current_user.hod? || current_user.admin?
+      redirect_to root_path, alert: "You are not authorized to access Archived KRA."
+      return
+    end
+
+    @financial_year = params[:financial_year].to_s.strip
+    @quarter = params[:quarter].to_s.strip
+    @employee_detail = EmployeeDetail.includes(
+      :quarterly_pli_reviews,
+      user_details: [ :activity, :department, achievements: :achievement_remark ]
+    ).find_by(id: params[:id])
+
+    if @employee_detail.blank? || @financial_year.blank? || !get_all_quarters.include?(@quarter)
+      redirect_to archived_employee_details_path, alert: "Invalid Archived KRA record."
+      return
+    end
+
+    @detail_payload = quarter_pli_payload_for(
+      @employee_detail, @financial_year, @quarter, require_ready: false
+    )
+    unless @detail_payload
+      redirect_to archived_employee_details_path(financial_year: @financial_year, quarter: @quarter), alert: "No submitted KRA data found for this quarter."
+      return
+    end
+
+    @quarter_label = "#{@quarter} (#{@detail_payload[:months].map { |month| month[:label] }.join('-')})"
+    @review = @employee_detail.quarterly_pli_reviews.find do |item|
+      item.financial_year == @financial_year && item.quarter == @quarter
+    end
   end
 
   def export_submission_overview_xlsx
@@ -2702,6 +2766,89 @@ end
         data[:financial_year].to_s
       ]
     end.to_h
+  end
+
+  def build_archived_rows(monthly_data)
+    rows = monthly_data.values.group_by do |data|
+      [ data[:employee].id, data[:financial_year], data[:quarter_name] ]
+    end.filter_map do |(_employee_id, financial_year, quarter), entries|
+      next if quarter.blank?
+
+      employee = entries.first[:employee]
+      entries_by_month = entries.index_by { |entry| entry[:month] }
+      target_months = get_quarter_months(quarter).filter_map { |month| entries_by_month[month] }
+      submitted_months = target_months.select { |item| item[:status] != "not_submitted" }
+      months = get_quarter_months(quarter).map do |month|
+        entries_by_month[month] || {
+          employee: employee,
+          financial_year: financial_year,
+          quarter_name: quarter,
+          month: month,
+          month_label: month_label(month),
+          status: "not_submitted",
+          progress_value: nil,
+          progress: "-"
+        }
+      end
+      review = employee.quarterly_pli_reviews.find do |item|
+        item.financial_year == financial_year && item.quarter == quarter
+      end
+      progress_values = months.filter_map { |item| item[:progress_value] }
+
+      {
+        employee: employee,
+        financial_year: financial_year,
+        quarter: quarter,
+        quarter_label: "#{quarter} (#{submitted_months.map { |item| item[:month_label] }.join('-')})",
+        target_months: target_months,
+        submitted_months: submitted_months,
+        target_month_count: target_months.size,
+        months: months,
+        submitted_count: target_months.count { |item| item[:status] != "not_submitted" },
+        quarter_progress: format_pli_percentage(average_review_percentage(progress_values)),
+        quarterly_review: review
+      }.tap do |row|
+        row[:pending_with] = archived_pending_with(submitted_months, review)
+      end
+    end
+
+    rows.sort_by do |row|
+      [ row[:employee].employee_name.to_s.downcase, row[:financial_year].to_s, row[:quarter] ]
+    end
+  end
+
+  def archived_row_status(row)
+    return "approved" if row[:quarterly_review]&.status == "approved"
+    return "not_submitted" if row[:submitted_count].zero?
+    return "submitted" if row[:target_month_count].positive? && row[:submitted_count] == row[:target_month_count]
+
+    "pending"
+  end
+
+  def archived_pending_with(submitted_months, quarterly_review)
+    if quarterly_review&.status == "approved"
+      reviewer = quarterly_review.reviewed_by
+      return [ { role: "Completed", name: reviewer&.email, code: reviewer&.employee_code } ]
+    end
+
+    reviewers = submitted_months.filter_map do |month|
+      employee = month[:employee]
+      role, code, fallback_name = case month[:status_reviewer_role].to_s
+      when /Observer\s*(?:Menu\s*)?1/i then [ "OB1", employee&.obs_code1, nil ]
+      when /Observer\s*(?:Menu\s*)?2/i then [ "OB2", employee&.obs_code2, nil ]
+      when /Observer\s*(?:Menu\s*)?3/i then [ "OB3", employee&.obs_code3, nil ]
+      when /Observer\s*(?:Menu\s*)?4/i then [ "OB4", employee&.obs_code4, nil ]
+      when /L1/i then [ "L1", employee&.l1_code, employee&.l1_employer_name ]
+      end
+      next if role.blank?
+
+      { role: role, name: month[:status_reviewer_name].presence || fallback_name, code: code }
+    end.uniq { |reviewer| [ reviewer[:role], reviewer[:code] ] }
+
+    return reviewers if reviewers.any?
+
+    employee = submitted_months.first&.dig(:employee)
+    [ { role: "L1", name: employee&.l1_employer_name, code: employee&.l1_code } ]
   end
 
   def add_status_reviewer_details!(monthly_data, employee_details)

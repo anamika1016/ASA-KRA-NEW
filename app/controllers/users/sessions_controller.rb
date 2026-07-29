@@ -11,6 +11,7 @@ class Users::SessionsController < Devise::SessionsController
     end
 
     employee_detail = find_employee_detail(submitted_code)
+    refresh_portal_account(employee_detail)
 
     user = User.find_by("lower(employee_code) = ?", submitted_code.downcase)
     user ||= provision_employee_account(employee_detail)
@@ -41,6 +42,14 @@ class Users::SessionsController < Devise::SessionsController
   end
 
   private
+
+  def refresh_portal_account(employee)
+    return unless employee&.portal_active?
+
+    employee.ensure_portal_user!
+  rescue ActiveRecord::RecordInvalid => e
+    Rails.logger.error("Portal account refresh failed for employee code #{employee.employee_code}: #{e.message}")
+  end
 
   def provision_employee_account(employee)
     return unless employee

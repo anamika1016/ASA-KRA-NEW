@@ -7,7 +7,8 @@ class EmployeeSidebarAccess < ApplicationRecord
     "observer_3" => "observer_3_active",
     "observer_4" => "observer_4_active",
     "l1" => "l1_active",
-    "quarterly_pli" => "quarterly_pli_active"
+    "quarterly_pli" => "quarterly_pli_active",
+    "archived" => "archived_active"
   }.freeze
 
   belongs_to :employee_detail
@@ -20,7 +21,10 @@ class EmployeeSidebarAccess < ApplicationRecord
     attribute = MENU_ATTRIBUTES[menu_key.to_s]
     return false if attribute.blank?
 
-    find_by(employee_detail_id: employee_detail.id)&.public_send(attribute) != false
+    access = find_by(employee_detail_id: employee_detail.id)
+    return false if menu_key.to_s == "archived" && access.blank?
+
+    access&.public_send(attribute) != false
   rescue ActiveRecord::StatementInvalid
     true
   end
