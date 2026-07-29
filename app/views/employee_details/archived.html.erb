@@ -52,11 +52,15 @@
                   <% if row[:quarterly_review]&.status == "approved" && row[:quarterly_review].final_percentage.present? %><span class="inline-flex items-center px-3 py-1 rounded bg-blue-50 text-blue-700 font-semibold"><%= format("%.2f", row[:quarterly_review].final_percentage.to_f) %>%</span><% else %><span class="text-gray-400">-</span><% end %>
                 </td>
                 <td class="archive-td text-center">
-                  <% if row[:history_status] == "returned" %><span class="status-badge border-red-300 bg-red-50 text-red-700">Returned</span>
-                  <% elsif row[:quarterly_review]&.status == "approved" %><span class="status-badge border-blue-300 bg-blue-50 text-blue-700">Approved</span>
-                  <% elsif fully_submitted %><span class="status-badge border-green-300 bg-green-50 text-green-700">Submitted</span>
-                  <% elsif partially_submitted %><span class="status-badge border-yellow-300 bg-yellow-50 text-yellow-700">Pending</span>
-                  <% else %><span class="status-badge border-gray-300 bg-gray-50 text-gray-600">Not Submitted</span><% end %>
+                  <% status_badges = {
+                    "returned" => [ "Returned", "border-red-300 bg-red-50 text-red-700" ],
+                    "approved" => [ "Approved", "border-blue-300 bg-blue-50 text-blue-700" ],
+                    "submitted" => [ "Submitted", "border-green-300 bg-green-50 text-green-700" ],
+                    "pending" => [ "Pending", "border-yellow-300 bg-yellow-50 text-yellow-700" ],
+                    "not_submitted" => [ "Not Submitted", "border-gray-300 bg-gray-50 text-gray-600" ]
+                  } %>
+                  <% status_text, status_classes = status_badges.fetch(row[:history_status], status_badges["not_submitted"]) %>
+                  <span class="status-badge <%= status_classes %>"><%= status_text %></span>
                 </td>
                 <td class="archive-td text-center">
                   <div class="flex flex-wrap justify-center gap-1.5">
@@ -65,6 +69,7 @@
                         <strong><%= reviewer[:role] %></strong>
                         <% if reviewer[:name].present? %><span class="mt-0.5 font-medium"><%= reviewer[:name] %></span><% end %>
                         <% if reviewer[:code].present? %><span class="mt-0.5 opacity-75"><%= reviewer[:code] %></span><% end %>
+                        <% if reviewer[:status].present? %><span class="mt-1 border-t border-current/20 pt-1 font-semibold">Status: <%= reviewer[:status] %></span><% end %>
                       </span>
                     <% end %>
                   </div>

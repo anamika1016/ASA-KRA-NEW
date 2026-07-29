@@ -2841,9 +2841,16 @@ end
     return "returned" if archived_row_returned?(row)
     return "approved" if row[:quarterly_review]&.status == "approved"
     return "not_submitted" if row[:submitted_count].zero?
-    return "submitted" if row[:target_month_count].positive? && row[:submitted_count] == row[:target_month_count]
+    return "submitted" unless archived_row_review_started?(row)
 
     "pending"
+  end
+
+  def archived_row_review_started?(row)
+    row[:submitted_months].any? do |month|
+      month[:observer_audit].to_a.any? { |audit| audit[:status] == "approved" } ||
+        %w[l1_approved l2_approved l1_returned l2_returned].include?(month[:status])
+    end
   end
 
   def archived_row_returned?(row)
@@ -2853,13 +2860,13 @@ end
 
   def build_kra_history_counts(rows)
     employee_ids = rows.map { |row| row[:employee].id }.uniq
-    submitted_ids = rows.select { |row| row[:submitted_count].positive? }.map { |row| row[:employee].id }.uniq
+    filled_ids = rows.select { |row| row[:submitted_count].positive? }.map { |row| row[:employee].id }.uniq
 
     {
       total: employee_ids.size,
-      submitted: submitted_ids.size,
+      submitted: rows.select { |row| archived_row_status(row) == "submitted" }.map { |row| row[:employee].id }.uniq.size,
       pending: rows.select { |row| archived_row_status(row) == "pending" }.map { |row| row[:employee].id }.uniq.size,
-      not_submitted: (employee_ids - submitted_ids).size,
+      not_submitted: (employee_ids - filled_ids).size,
       returned: rows.select { |row| archived_row_status(row) == "returned" }.map { |row| row[:employee].id }.uniq.size,
       approved: rows.select { |row| archived_row_status(row) == "approved" }.map { |row| row[:employee].id }.uniq.size
     }
@@ -2874,11 +2881,12 @@ end
       return [ {
         role: "Completed",
         name: reviewer_employee&.employee_name.presence || reviewer&.employee_code.presence || "Reviewer",
-        code: reviewer_employee&.employee_code.presence || reviewer&.employee_code
+        code: reviewer_employee&.employee_code.presence || reviewer&.employee_code,
+        status: "Approved"
       } ]
     end
 
-    return [ { role: "-", name: nil, code: nil } ] if submitted_months.empty?
+    return [ { role: "-", name: nil, code: nil, status: "Not Submitted" } ] if submitted_months.empty?
 
     reviewers = submitted_months.filter_map do |month|
       employee = month[:employee]
@@ -2891,13 +2899,13 @@ end
       end
       next if role.blank?
 
-      { role: role, name: month[:status_reviewer_name].presence || fallback_name, code: code }
+      { role: role, name: month[:status_reviewer_name].presence || fallback_name, code: code, status: "Pending" }
     end.uniq { |reviewer| [ reviewer[:role], reviewer[:code] ] }
 
     return reviewers if reviewers.any?
 
     employee = submitted_months.first&.dig(:employee)
-    [ { role: "L1", name: employee&.l1_employer_name, code: employee&.l1_code } ]
+    [ { role: "L1", name: employee&.l1_employer_name, code: employee&.l1_code, status: "Pending" } ]
   end
 
   def add_status_reviewer_details!(monthly_data, employee_details)
