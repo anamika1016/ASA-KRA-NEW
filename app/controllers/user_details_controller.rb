@@ -290,6 +290,12 @@ class UserDetailsController < ApplicationController
 
           # Save if there are changes
           if achievement.achievement != old_achievement || achievement.employee_remarks != old_remarks
+            # This is the actual Monthly Key Result Indicator submission event.
+            achievement.status = "pending"
+            achievement.submitted_by = current_user
+            achievement.submitted_at = Time.current
+            achievement.l1_reviewed_by = nil
+            achievement.l1_reviewed_at = nil
             if achievement.save
               success_count += 1
               activity_updated = true
@@ -726,6 +732,10 @@ class UserDetailsController < ApplicationController
                 achievement.achievement = achievement_value.present? ? normalize_numeric_value(achievement_value) : nil
                 achievement.employee_remarks = employee_remarks.to_s.strip.presence
                 achievement.status = "pending"
+                achievement.submitted_by = current_user
+                achievement.submitted_at = Time.current
+                achievement.l1_reviewed_by = nil
+                achievement.l1_reviewed_at = nil
 
                 if achievement.save
                   success_count += 1
@@ -841,6 +851,10 @@ class UserDetailsController < ApplicationController
             achievement.achievement = achievement_value.present? ? normalize_numeric_value(achievement_value) : nil
             achievement.employee_remarks = employee_remarks.to_s.strip.presence
             achievement.status = "pending"
+            achievement.submitted_by = current_user
+            achievement.submitted_at = Time.current
+            achievement.l1_reviewed_by = nil
+            achievement.l1_reviewed_at = nil
 
             if achievement.save
               success_count += 1

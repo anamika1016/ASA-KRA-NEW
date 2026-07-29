@@ -2722,8 +2722,51 @@ end
     end
     observer_names_by_code = observer_names_by_code_for(employee_details)
 
+    audit_user_ids = monthly_data.values.flat_map do |data|
+      audit_achievements_for(data).flat_map { |achievement| [ achievement.submitted_by_id, achievement.l1_reviewed_by_id ] }
+    end.compact.uniq
+    observer_reviews = ObserverPliReview
+      .where(
+        employee_detail_id: monthly_data.values.map { |data| data[:employee].id }.uniq,
+        financial_year: monthly_data.values.filter_map { |data| data[:financial_year] }.uniq,
+        month: monthly_data.values.map { |data| data[:month] }.uniq
+      )
+      .order(:reviewed_at)
+      .to_a
+    audit_user_ids |= observer_reviews.filter_map(&:reviewed_by_id)
+    audit_users = User.where(id: audit_user_ids).index_by(&:id)
+    audit_employee_names = EmployeeDetail.where("LOWER(employee_code) IN (?)", audit_users.values.filter_map { |user| user.employee_code.to_s.strip.downcase.presence })
+                                         .index_by { |employee| employee.employee_code.to_s.strip.downcase }
+
     monthly_data.each_value do |data|
       employee = data[:employee]
+      achievements = audit_achievements_for(data)
+      last_submission = achievements.select(&:submitted_at).max_by(&:submitted_at)
+      last_l1_review = achievements.select(&:l1_reviewed_at).max_by(&:l1_reviewed_at)
+      legacy_submission = achievements.select(&:persisted?).max_by(&:created_at)
+      data[:submitted_at] = last_submission&.submitted_at || legacy_submission&.created_at
+      data[:submitted_by_name] = audit_actor_name(last_submission&.submitted_by_id, audit_users, audit_employee_names) || employee.employee_name
+      data[:submission_time_inferred] = last_submission.blank? && legacy_submission.present?
+
+      legacy_l1_review = achievements.select do |achievement|
+        %w[l1_approved l1_returned l2_approved l2_returned].include?(achievement.status)
+      end.max_by(&:updated_at)
+      data[:l1_reviewed_at] = last_l1_review&.l1_reviewed_at || legacy_l1_review&.updated_at
+      data[:l1_reviewed_by_name] = audit_actor_name(last_l1_review&.l1_reviewed_by_id, audit_users, audit_employee_names) ||
+        (legacy_l1_review.present? ? employee.l1_employer_name.presence || employee.l1_code.presence : nil)
+      data[:l1_review_time_inferred] = last_l1_review.blank? && legacy_l1_review.present?
+      data[:observer_audit] = observer_reviews.select do |review|
+        review.employee_detail_id == employee.id &&
+          review.financial_year == data[:financial_year] &&
+          review.month.to_s == data[:month].to_s
+      end.map do |review|
+        {
+          level: observer_menu_title(review.observer_level),
+          status: review.status,
+          reviewed_at: review.reviewed_at,
+          reviewed_by_name: audit_actor_name(review.reviewed_by_id, audit_users, audit_employee_names)
+        }
+      end
       case data[:status]
       when "pending"
         pending_observer_level = observer_levels_for(employee).find do |observer_level|
@@ -2754,6 +2797,22 @@ end
     end
 
     monthly_data
+  end
+
+  def audit_achievements_for(data)
+    data[:employee].user_details.select do |detail|
+      data[:financial_year].blank? || detail.financial_year == data[:financial_year]
+    end.flat_map(&:achievements).select { |achievement| achievement.month.to_s == data[:month].to_s }
+  end
+
+  def audit_actor_name(user_id, users_by_id, employees_by_code)
+    return nil if user_id.blank?
+
+    user = users_by_id[user_id]
+    return nil unless user
+
+    employee = employees_by_code[user.employee_code.to_s.strip.downcase]
+    employee&.employee_name.presence || user.employee_code.presence || user.email.presence || "User ##{user.id}"
   end
 
   def apply_admin_status_filter(monthly_data, status_filter)
@@ -3366,7 +3425,11 @@ end
           next
         end
 
-        achievement.update!(status: new_status)
+        achievement.update!(
+          status: new_status,
+          l1_reviewed_by: current_user,
+          l1_reviewed_at: Time.current
+        )
 
         remark = achievement.achievement_remark || achievement.build_achievement_remark
         manager_remark = manager_remark_for(detail.id, month)
@@ -3407,7 +3470,11 @@ end
           # FIXED: Update ALL achievements in the quarter to the same status
           quarter_achievements.each do |achievement|
             old_status = achievement.status
-            achievement.update!(status: new_status)
+            achievement.update!(
+              status: new_status,
+              l1_reviewed_by: current_user,
+              l1_reviewed_at: Time.current
+            )
 
             # Create or update achievement remark with COMMON remarks for quarter
             remark = achievement.achievement_remark || achievement.build_achievement_remark
@@ -3440,7 +3507,11 @@ end
 
           submitted_achievements.each do |achievement|
             # Update achievement status
-            achievement.update!(status: new_status)
+            achievement.update!(
+              status: new_status,
+              l1_reviewed_by: current_user,
+              l1_reviewed_at: Time.current
+            )
 
             remark = achievement.achievement_remark || achievement.build_achievement_remark
             manager_remark = manager_remark_for(detail.id, achievement.month)

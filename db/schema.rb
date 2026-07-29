@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_07_28_000400) do
+ActiveRecord::Schema[8.0].define(version: 2026_07_29_000100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -43,8 +43,16 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_28_000400) do
     t.text "l2_remarks"
     t.float "l2_percentage"
     t.text "employee_remarks"
+    t.bigint "submitted_by_id"
+    t.datetime "submitted_at"
+    t.bigint "l1_reviewed_by_id"
+    t.datetime "l1_reviewed_at"
+    t.index ["l1_reviewed_at"], name: "index_achievements_on_l1_reviewed_at"
+    t.index ["l1_reviewed_by_id"], name: "index_achievements_on_l1_reviewed_by_id"
     t.index ["month"], name: "index_achievements_on_month"
     t.index ["status"], name: "index_achievements_on_status"
+    t.index ["submitted_at"], name: "index_achievements_on_submitted_at"
+    t.index ["submitted_by_id"], name: "index_achievements_on_submitted_by_id"
     t.index ["user_detail_id", "month"], name: "index_achievements_on_user_detail_id_and_month"
     t.index ["user_detail_id"], name: "index_achievements_on_user_detail_id"
   end
@@ -384,6 +392,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_28_000400) do
 
   add_foreign_key "achievement_remarks", "achievements"
   add_foreign_key "achievements", "user_details"
+  add_foreign_key "achievements", "users", column: "l1_reviewed_by_id"
+  add_foreign_key "achievements", "users", column: "submitted_by_id"
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "activities", "departments"

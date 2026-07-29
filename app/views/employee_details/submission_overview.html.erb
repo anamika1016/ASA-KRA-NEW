@@ -97,6 +97,8 @@
               <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Department</th>
               <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Financial Year</th>
               <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Month</th>
+              <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Submitted By / Date & Time</th>
+              <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Approval Timeline</th>
               <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Reviewer</th>
               <th class="px-6 py-4 text-center text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">% Progress</th>
               <th class="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-r border-gray-600">Status</th>
@@ -106,7 +108,7 @@
           <tbody class="bg-white divide-y divide-gray-200">
             <% if @monthly_employee_data.empty? %>
               <tr>
-                <td colspan="9" class="px-6 py-10 text-center text-gray-500">No records found for selected filters.</td>
+                <td colspan="11" class="px-6 py-10 text-center text-gray-500">No records found for selected filters.</td>
               </tr>
             <% else %>
               <% row_index = 0 %>
@@ -128,6 +130,40 @@
                   <td class="px-6 py-4 text-sm text-gray-700 border-r border-gray-200">
                     <span class="font-semibold text-violet-700"><%= month_label %></span>
                     <span class="ml-2 text-xs text-gray-500"><%= quarter_name %></span>
+                  </td>
+                  <td class="px-6 py-4 text-sm text-gray-700 border-r border-gray-200 min-w-[190px]">
+                    <% if data[:submitted_at].present? %>
+                      <div class="font-semibold text-gray-900"><%= data[:submitted_by_name].presence || emp.employee_name %></div>
+                      <div class="text-xs text-gray-500"><%= data[:submitted_at].in_time_zone("Asia/Kolkata").strftime("%d-%m-%Y %I:%M:%S %p") %> IST</div>
+                      <% if data[:submission_time_inferred] %>
+                        <div class="text-[10px] text-amber-700 mt-1">Legacy record time</div>
+                      <% end %>
+                    <% elsif current_status == "not_submitted" %>
+                      <span class="text-gray-400">Not submitted</span>
+                    <% else %>
+                      <span class="text-amber-700 text-xs">Old record — time unavailable</span>
+                    <% end %>
+                  </td>
+                  <td class="px-6 py-4 text-sm text-gray-700 border-r border-gray-200 min-w-[230px]">
+                    <% data[:observer_audit].to_a.each do |audit| %>
+                      <div class="mb-2 last:mb-0">
+                        <span class="font-semibold"><%= audit[:level] %>:</span>
+                        <span class="<%= audit[:status] == 'approved' ? 'text-green-700' : 'text-red-700' %>"><%= audit[:status].to_s.titleize %></span>
+                        <div class="text-xs text-gray-500"><%= audit[:reviewed_by_name].presence || "-" %> · <%= audit[:reviewed_at]&.in_time_zone("Asia/Kolkata")&.strftime("%d-%m-%Y %I:%M:%S %p") || "-" %><%= " IST" if audit[:reviewed_at].present? %></div>
+                      </div>
+                    <% end %>
+                    <% if data[:l1_reviewed_at].present? %>
+                      <div class="mt-2 pt-2 border-t border-gray-200">
+                        <span class="font-semibold">L1:</span>
+                        <span class="text-green-700"><%= current_status == "l1_returned" ? "Returned" : "Approved" %></span>
+                        <div class="text-xs text-gray-500"><%= data[:l1_reviewed_by_name].presence || "-" %> · <%= data[:l1_reviewed_at].in_time_zone("Asia/Kolkata").strftime("%d-%m-%Y %I:%M:%S %p") %> IST</div>
+                        <% if data[:l1_review_time_inferred] %>
+                          <div class="text-[10px] text-amber-700">Legacy record time</div>
+                        <% end %>
+                      </div>
+                    <% elsif data[:observer_audit].blank? %>
+                      <span class="text-gray-400">-</span>
+                    <% end %>
                   </td>
                   <td class="px-6 py-4 text-sm text-gray-700 border-r border-gray-200">
                     <% if data[:status_reviewer_name].present? %>

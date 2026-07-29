@@ -15,6 +15,10 @@ class AchievementsController < ApplicationController
       a.achievement = achievement
       # FIXED: Ensure status is set to pending for quarterly consistency
       a.status = "pending"
+      a.submitted_by = current_user
+      a.submitted_at = Time.current
+      a.l1_reviewed_by = nil
+      a.l1_reviewed_at = nil
       a.save
     end
 

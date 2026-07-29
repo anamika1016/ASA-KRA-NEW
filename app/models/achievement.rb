@@ -1,5 +1,7 @@
 class Achievement < ApplicationRecord
   belongs_to :user_detail
+  belongs_to :submitted_by, class_name: "User", optional: true
+  belongs_to :l1_reviewed_by, class_name: "User", optional: true
   has_one :achievement_remark, dependent: :destroy
 
   # validates :month, uniqueness: { scope: :user_detail_id }
