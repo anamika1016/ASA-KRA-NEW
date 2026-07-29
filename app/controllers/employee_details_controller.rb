@@ -5,7 +5,7 @@ require "set"
 
 class EmployeeDetailsController < ApplicationController
   before_action :set_employee_detail, only: [ :edit, :update, :destroy, :toggle_portal_status, :update_portal_role ]
-  load_and_authorize_resource except: [ :approve, :return, :l2_approve, :l2_return, :edit_l1, :edit_l2, :toggle_portal_status, :update_portal_role, :toggle_sidebar_menu, :bulk_update_portal_status, :bulk_destroy, :quarterly_pli, :export_quarterly_pli_xlsx, :quarterly_pli_detail, :archived_detail, :save_quarterly_pli, :observer_1, :observer_2, :observer_3, :observer_4, :observer_pli_detail, :save_observer_pli, :kra_targets, :export_kra_targets, :submission_overview, :archived, :export_submission_overview_xlsx, :export_l1_xlsx, :export_observer_pli_xlsx ]
+  load_and_authorize_resource except: [ :approve, :return, :l2_approve, :l2_return, :edit_l1, :edit_l2, :toggle_portal_status, :update_portal_role, :toggle_sidebar_menu, :bulk_update_portal_status, :bulk_destroy, :quarterly_pli, :export_quarterly_pli_xlsx, :quarterly_pli_detail, :save_quarterly_pli, :observer_1, :observer_2, :observer_3, :observer_4, :observer_pli_detail, :save_observer_pli, :kra_targets, :export_kra_targets, :submission_overview, :archived, :export_submission_overview_xlsx, :export_l1_xlsx, :export_observer_pli_xlsx ]
 
   def index
     @employee_detail = EmployeeDetail.new
@@ -545,38 +545,6 @@ class EmployeeDetailsController < ApplicationController
     else
       submitted_rows = history_rows.select { |row| row[:submitted_count].positive? }
       @selected_archived_status.present? ? submitted_rows.select { |row| row[:history_status] == @selected_archived_status } : submitted_rows
-    end
-  end
-
-  def archived_detail
-    unless current_user.hod? || current_user.admin?
-      redirect_to root_path, alert: "You are not authorized to access KRA History."
-      return
-    end
-
-    @financial_year = params[:financial_year].to_s.strip
-    @quarter = params[:quarter].to_s.strip
-    @employee_detail = EmployeeDetail.includes(
-      :quarterly_pli_reviews,
-      user_details: [ :activity, :department, achievements: :achievement_remark ]
-    ).find_by(id: params[:id])
-
-    if @employee_detail.blank? || @financial_year.blank? || !get_all_quarters.include?(@quarter)
-      redirect_to archived_employee_details_path, alert: "Invalid KRA History record."
-      return
-    end
-
-    @detail_payload = quarter_pli_payload_for(
-      @employee_detail, @financial_year, @quarter, require_ready: false
-    )
-    unless @detail_payload
-      redirect_to archived_employee_details_path(financial_year: @financial_year, quarter: @quarter), alert: "No submitted KRA data found for this quarter."
-      return
-    end
-
-    @quarter_label = "#{@quarter} (#{@detail_payload[:months].map { |month| month[:label] }.join('-')})"
-    @review = @employee_detail.quarterly_pli_reviews.find do |item|
-      item.financial_year == @financial_year && item.quarter == @quarter
     end
   end
 
@@ -1480,7 +1448,12 @@ end
     @observer_level = params[:observer_level].to_s.presence
     @kra_source = params[:source].to_s.presence
 
-    if @observer_level.present?
+    if @kra_source == "archived"
+      unless current_user.hod? || current_user.admin? || employee_menu_access_enabled?(:archived)
+        redirect_to root_path, alert: "You are not authorized to view KRA History."
+        return false
+      end
+    elsif @observer_level.present?
       authorized = observer_pli_authorized?(@observer_level) &&
                    observer_pli_employee_scope(@observer_level).where(id: @employee_detail.id).exists?
       unless authorized
