@@ -19,15 +19,15 @@
           <div class="flex flex-wrap items-center gap-3">
           <% if @financial_year_options.any? %>
             <%= form_with url: kra_targets_employee_detail_path(@employee_detail), method: :get, local: true, class: "flex items-center gap-3", data: { turbo: false } do %>
+              <%= hidden_field_tag :source, @kra_source if @kra_source.present? %>
               <%= hidden_field_tag :observer_level, @observer_level if @observer_level.present? %>
-              <%= hidden_field_tag :source, params[:source] %>
               <%= label_tag :financial_year, "Financial year", class: "text-sm font-semibold text-gray-700" %>
               <%= select_tag :financial_year, options_for_select(@financial_year_options, @selected_financial_year),
                   class: "bg-white border border-gray-300 rounded-lg px-4 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500",
                   onchange: "this.form.submit()" %>
             <% end %>
           <% end %>
-          <%= link_to export_kra_targets_employee_detail_path(@employee_detail, financial_year: @selected_financial_year, observer_level: @observer_level),
+          <%= link_to export_kra_targets_employee_detail_path(@employee_detail, financial_year: @selected_financial_year, observer_level: @observer_level, source: @kra_source),
               class: "inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold shadow-md transition duration-200" do %>
             <i class="fas fa-file-excel"></i>
             Export Excel

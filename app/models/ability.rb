@@ -17,21 +17,21 @@ class Ability
 
     # L1 Permissions - Check if user's employee_code matches any l1_code OR email matches l1_employer_name
     can :read, EmployeeDetail do |ed|
-      (code_matches?(ed.l1_code, user.employee_code) || code_matches?(ed.l1_employer_name, user.email)) &&
-      [ "pending", "l1_returned", "l1_approved", "l2_returned", "l2_approved" ].include?(ed.status)
+      (reviewer_code_matches?(ed.l1_code, user) || code_matches?(ed.l1_employer_name, user.email)) &&
+      [ nil, "pending", "l1_returned", "l1_approved", "l2_returned", "l2_approved" ].include?(ed.status)
     end
 
     can [ :approve, :return ], EmployeeDetail do |ed|
-      (code_matches?(ed.l1_code, user.employee_code) || code_matches?(ed.l1_employer_name, user.email)) &&
+      (reviewer_code_matches?(ed.l1_code, user) || code_matches?(ed.l1_employer_name, user.email)) &&
       [ "pending", "l1_returned" ].include?(ed.status)
     end
 
     can :l1, EmployeeDetail do
       # User can access L1 view if they have any L1 assignments
       EmployeeDetail.where(
-        "LOWER(TRIM(COALESCE(l1_code, ''))) = ? OR LOWER(TRIM(COALESCE(l1_employer_name, ''))) = ?",
-        user.employee_code.to_s.strip.downcase,
-        user.email.to_s.strip.downcase
+        "LOWER(TRIM(COALESCE(l1_code, ''))) IN (:codes) OR LOWER(TRIM(COALESCE(l1_employer_name, ''))) = :email",
+        codes: user.reviewer_identity_codes.presence || [ "" ],
+        email: user.email.to_s.strip.downcase
       ).exists?
     end
 
@@ -76,14 +76,15 @@ class Ability
       can observer_actions, EmployeeDetail
     else
       observer_code = resolved_observer_code_for(user)
+      observer_codes = user.reviewer_identity_codes
 
       observer_action_levels.each do |action, column|
         can action, EmployeeDetail do
           next false if observer_code.blank?
 
           EmployeeDetail.where(
-            "LOWER(TRIM(COALESCE(#{column}, ''))) = ?",
-            observer_code
+            "LOWER(TRIM(COALESCE(#{column}, ''))) IN (?)",
+            observer_codes
           ).exists?
         end
       end
@@ -93,8 +94,8 @@ class Ability
 
         observer_action_levels.values.any? do |column|
           EmployeeDetail.where(
-            "LOWER(TRIM(COALESCE(#{column}, ''))) = ?",
-            observer_code
+            "LOWER(TRIM(COALESCE(#{column}, ''))) IN (?)",
+            observer_codes
           ).exists?
         end
       end
@@ -113,6 +114,10 @@ class Ability
 
   def code_matches?(left, right)
     left.to_s.strip.downcase == right.to_s.strip.downcase
+  end
+
+  def reviewer_code_matches?(assigned_code, user)
+    user.reviewer_identity_codes.include?(assigned_code.to_s.strip.downcase)
   end
 
   def resolved_observer_code_for(user)

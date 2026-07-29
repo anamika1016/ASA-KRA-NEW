@@ -1404,11 +1404,17 @@ end
   def load_kra_target_overview
     @employee_detail = EmployeeDetail.find(params[:id])
     @observer_level = params[:observer_level].to_s.presence
+    @kra_source = params[:source].to_s.presence
 
     if @observer_level.present?
       authorized = observer_pli_authorized?(@observer_level) &&
                    observer_pli_employee_scope(@observer_level).where(id: @employee_detail.id).exists?
       unless authorized
+        redirect_to root_path, alert: "You are not authorized to view this employee's KRA targets."
+        return false
+      end
+    elsif @kra_source == "l1"
+      unless has_l1_responsibilities? && l1_employee_scope_for_current_user.where(id: @employee_detail.id).exists?
         redirect_to root_path, alert: "You are not authorized to view this employee's KRA targets."
         return false
       end
