@@ -523,7 +523,7 @@ class EmployeeDetailsController < ApplicationController
     ).order(Arel.sql("LOWER(employee_name) ASC"))
     @selected_financial_year = params[:financial_year].presence
     @selected_quarter = get_all_quarters.include?(params[:quarter]) ? params[:quarter] : nil
-    @selected_archived_status = %w[submitted pending approved not_submitted].include?(params[:status]) ? params[:status] : nil
+    @selected_archived_status = %w[submitted pending approved returned not_submitted].include?(params[:status]) ? params[:status] : nil
     @quarter_options = get_all_quarters
     @archive_heading_months = @selected_quarter.present? ? get_quarter_months(@selected_quarter) : nil
     @financial_year_options = %w[2026-2027 2027-2028 2028-2029]
@@ -532,10 +532,12 @@ class EmployeeDetailsController < ApplicationController
       @employee_details,
       financial_year: @selected_financial_year
     )
-    @archived_rows = build_archived_rows(monthly_data)
-    @archived_rows.select! { |row| row[:submitted_count].positive? }
-    @archived_rows.select! { |row| row[:quarter] == @selected_quarter } if @selected_quarter.present?
-    @archived_rows.select! { |row| archived_row_status(row) == @selected_archived_status } if @selected_archived_status.present?
+    history_rows = build_archived_rows(monthly_data)
+    history_rows.select! { |row| row[:quarter] == @selected_quarter } if @selected_quarter.present?
+    history_rows.each { |row| row[:history_status] = archived_row_status(row) }
+    @kra_history_counts = build_kra_history_counts(history_rows)
+    @archived_rows = history_rows.select { |row| row[:submitted_count].positive? }
+    @archived_rows.select! { |row| row[:history_status] == @selected_archived_status } if @selected_archived_status.present?
   end
 
   def archived_detail
@@ -2818,11 +2820,31 @@ end
   end
 
   def archived_row_status(row)
+    return "returned" if archived_row_returned?(row)
     return "approved" if row[:quarterly_review]&.status == "approved"
     return "not_submitted" if row[:submitted_count].zero?
     return "submitted" if row[:target_month_count].positive? && row[:submitted_count] == row[:target_month_count]
 
     "pending"
+  end
+
+  def archived_row_returned?(row)
+    row[:quarterly_review]&.status == "returned" ||
+      row[:target_months].any? { |month| %w[l1_returned l2_returned].include?(month[:status]) }
+  end
+
+  def build_kra_history_counts(rows)
+    employee_ids = rows.map { |row| row[:employee].id }.uniq
+    submitted_ids = rows.select { |row| row[:submitted_count].positive? }.map { |row| row[:employee].id }.uniq
+
+    {
+      total: employee_ids.size,
+      submitted: submitted_ids.size,
+      pending: rows.select { |row| archived_row_status(row) == "pending" }.map { |row| row[:employee].id }.uniq.size,
+      not_submitted: (employee_ids - submitted_ids).size,
+      returned: rows.select { |row| archived_row_status(row) == "returned" }.map { |row| row[:employee].id }.uniq.size,
+      approved: rows.select { |row| archived_row_status(row) == "approved" }.map { |row| row[:employee].id }.uniq.size
+    }
   end
 
   def archived_pending_with(submitted_months, quarterly_review)

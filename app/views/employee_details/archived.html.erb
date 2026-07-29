@@ -13,7 +13,7 @@
           <%= form_with url: archived_employee_details_path, method: :get, local: true, class: "flex flex-col sm:flex-row gap-3", data: { turbo: false } do %>
             <%= select_tag :quarter, options_for_select([["All Quarters", ""]] + @quarter_options.map { |q| [q, q] }, @selected_quarter), class: "w-full sm:w-36 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500", onchange: "this.form.submit()" %>
             <%= select_tag :financial_year, options_for_select([["All Financial Years", ""]] + @financial_year_options.map { |fy| [fy, fy] }, @selected_financial_year), class: "w-full sm:w-48 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500", onchange: "this.form.submit()" %>
-            <%= select_tag :status, options_for_select([["All Status", ""], ["Submitted", "submitted"], ["Pending", "pending"], ["Approved", "approved"], ["Not Submitted", "not_submitted"]], @selected_archived_status), class: "w-full sm:w-44 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500", onchange: "this.form.submit()" %>
+            <%= select_tag :status, options_for_select([["All Status", ""], ["Submitted", "submitted"], ["Pending", "pending"], ["Approved", "approved"], ["Returned", "returned"], ["Not Submitted", "not_submitted"]], @selected_archived_status), class: "w-full sm:w-44 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500", onchange: "this.form.submit()" %>
           <% end %>
         </div>
       </div>
@@ -52,7 +52,8 @@
                   <% if row[:quarterly_review]&.status == "approved" && row[:quarterly_review].final_percentage.present? %><span class="inline-flex items-center px-3 py-1 rounded bg-blue-50 text-blue-700 font-semibold"><%= format("%.2f", row[:quarterly_review].final_percentage.to_f) %>%</span><% else %><span class="text-gray-400">-</span><% end %>
                 </td>
                 <td class="archive-td text-center">
-                  <% if row[:quarterly_review]&.status == "approved" %><span class="status-badge border-blue-300 bg-blue-50 text-blue-700">Approved</span>
+                  <% if row[:history_status] == "returned" %><span class="status-badge border-red-300 bg-red-50 text-red-700">Returned</span>
+                  <% elsif row[:quarterly_review]&.status == "approved" %><span class="status-badge border-blue-300 bg-blue-50 text-blue-700">Approved</span>
                   <% elsif fully_submitted %><span class="status-badge border-green-300 bg-green-50 text-green-700">Submitted</span>
                   <% elsif partially_submitted %><span class="status-badge border-yellow-300 bg-yellow-50 text-yellow-700">Pending</span>
                   <% else %><span class="status-badge border-gray-300 bg-gray-50 text-gray-600">Not Submitted</span><% end %>
@@ -83,11 +84,13 @@
         </table>
       </div>
 
-      <div class="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div class="summary-card border-blue-200 bg-blue-50 text-blue-800"><p>Total Quarter Records</p><strong><%= @archived_rows.size %></strong></div>
-        <div class="summary-card border-yellow-200 bg-yellow-50 text-yellow-800"><p>Not Submitted</p><strong><%= @archived_rows.count { |r| r[:submitted_count].zero? } %></strong></div>
-        <div class="summary-card border-orange-200 bg-orange-50 text-orange-800"><p>Pending Submission</p><strong><%= @archived_rows.count { |r| r[:submitted_count].positive? && r[:submitted_count] < r[:target_month_count] } %></strong></div>
-        <div class="summary-card border-green-200 bg-green-50 text-green-800"><p>Fully Submitted</p><strong><%= @archived_rows.count { |r| r[:target_month_count].positive? && r[:submitted_count] == r[:target_month_count] } %></strong></div>
+      <div class="mt-6 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+        <div class="summary-card border-blue-200 bg-blue-50 text-blue-800"><p>Total Users</p><strong><%= @kra_history_counts[:total] %></strong></div>
+        <div class="summary-card border-indigo-200 bg-indigo-50 text-indigo-800"><p>Submitted</p><strong><%= @kra_history_counts[:submitted] %></strong></div>
+        <div class="summary-card border-yellow-200 bg-yellow-50 text-yellow-800"><p>Pending</p><strong><%= @kra_history_counts[:pending] %></strong></div>
+        <div class="summary-card border-gray-200 bg-gray-50 text-gray-800"><p>Not Submitted</p><strong><%= @kra_history_counts[:not_submitted] %></strong></div>
+        <div class="summary-card border-red-200 bg-red-50 text-red-800"><p>Returned</p><strong><%= @kra_history_counts[:returned] %></strong></div>
+        <div class="summary-card border-green-200 bg-green-50 text-green-800"><p>Approved</p><strong><%= @kra_history_counts[:approved] %></strong></div>
       </div>
     </div>
   </div>
