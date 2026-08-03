@@ -1626,6 +1626,18 @@ end
       review_months_for_progress(@selected_month, @selected_quarter)
     )
 
+    # The detail page must use the same canonical monthly status calculation as
+    # the L1 list. This avoids stale/duplicate achievement rows making the two
+    # pages show different states for the same employee and month.
+    if @selected_month.present?
+      @detail_review_status = build_monthly_employee_data(
+        [ @employee_detail ],
+        approval_level: "l1",
+        month: @selected_month,
+        financial_year: @selected_financial_year
+      ).values.first&.dig(:status)
+    end
+
     if @selected_quarter.present?
       @quarterly_activities = get_quarterly_activities(@user_details, @selected_quarter)
     else

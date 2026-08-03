@@ -357,7 +357,13 @@
     quarter_remarks_l2 = Set.new
     
     @user_details.each do |detail|
-      quarter_achievements = detail.achievements.select { |a| quarter_months.include?(a.month) }
+      # Keep this in sync with build_monthly_employee_data: only a genuinely
+      # submitted achievement can determine the review status. Approval/return
+      # actions may leave an older placeholder row (with a blank achievement)
+      # behind; counting that row made the detail page disagree with the L1 list.
+      quarter_achievements = detail.achievements.select do |achievement|
+        quarter_months.include?(achievement.month.to_s.downcase) && achievement.achievement.present?
+      end
       quarter_achievements.each do |achievement|
         quarterly_statuses << (achievement.status || "pending")
         
@@ -428,6 +434,10 @@
       
   
     end
+
+    # For a month opened from L1 View, use exactly the status calculated for
+    # that list row. This status also controls the Approve/Return buttons below.
+    overall_quarter_status = @detail_review_status if params[:month].present? && @detail_review_status.present?
 
     status_config = case overall_quarter_status
     when "pending"
