@@ -2974,7 +2974,8 @@ end
       data[:observer_audit] = observer_reviews.select do |review|
         review.employee_detail_id == employee.id &&
           review.financial_year == data[:financial_year] &&
-          review.month.to_s == data[:month].to_s
+          review.month.to_s == data[:month].to_s &&
+          observer_review_currently_assigned?(employee, review)
       end.map do |review|
         {
           level: observer_menu_title(review.observer_level),
@@ -3013,6 +3014,13 @@ end
     end
 
     monthly_data
+  end
+
+  # Submission Status reflects the employee's current approval chain. Reviews
+  # belonging to an observer level that has since been removed remain stored as
+  # history, but must not keep appearing in the live approval timeline.
+  def observer_review_currently_assigned?(employee, review)
+    employee.observer_assigned?(review.observer_level)
   end
 
   def audit_achievements_for(data)

@@ -1,6 +1,16 @@
 require "test_helper"
 
 class EmployeeDetailsControllerTest < ActionDispatch::IntegrationTest
+  test "submission overview hides reviews for observer levels removed from employee details" do
+    employee = EmployeeDetail.new(obs_code1: nil, obs_code2: "2002")
+    removed_review = Struct.new(:observer_level).new("obs_code1")
+    assigned_review = Struct.new(:observer_level).new("obs_code2")
+    controller = EmployeeDetailsController.new
+
+    assert_not controller.send(:observer_review_currently_assigned?, employee, removed_review)
+    assert controller.send(:observer_review_currently_assigned?, employee, assigned_review)
+  end
+
   test "should get index" do
     get employee_details_index_url
     assert_response :success
