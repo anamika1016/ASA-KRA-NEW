@@ -215,6 +215,88 @@ module UserDetailsHelper
     }
   end
 
+  def submitted_month_workflow_statuses(employee_detail, user_details, month, financial_year)
+    return [] if employee_detail.blank? || month.blank? || financial_year.blank?
+
+    month_key = month.to_s.downcase
+    quarter = quarter_name_for_submitted_month(month_key)
+    employee_details = user_details.select { |detail| detail.employee_detail_id == employee_detail.id }
+    month_achievements = employee_details.flat_map(&:achievements).select do |achievement|
+      achievement.month.to_s.downcase == month_key && achievement.achievement.present?
+    end
+
+    statuses = ApplicationHelper::OBSERVER_LEVELS.filter_map do |observer_level|
+      next unless observer_assigned?(employee_detail, observer_level)
+
+      review = ObserverPliReview.find_by(
+        employee_detail: employee_detail,
+        financial_year: financial_year,
+        quarter: quarter,
+        month: month_key,
+        observer_level: observer_level
+      )
+      reviewer = submitted_reviewer_identity(employee_detail.public_send(observer_level))
+
+      submitted_workflow_status(
+        role: observer_column_label(observer_level),
+        status: review&.status || "pending",
+        reviewer_name: submitted_reviewed_by_name(review&.reviewed_by) || reviewer[:name] || reviewer[:code],
+        reviewed_at: review&.reviewed_at
+      )
+    end
+
+    latest_l1_review = month_achievements.select(&:l1_reviewed_at).max_by(&:l1_reviewed_at)
+    latest_l1_action = latest_l1_review || month_achievements
+      .select { |achievement| %w[l1_approved l1_returned l2_approved l2_returned].include?(achievement.status) }
+      .max_by(&:updated_at)
+    l1_status = case latest_l1_action&.status
+    when "l1_returned" then "returned"
+    when "l1_approved", "l2_approved", "l2_returned" then "approved"
+    else "pending"
+    end
+    l1_reviewer = submitted_reviewer_identity(employee_detail.l1_code, employee_detail.l1_employer_name)
+    statuses << submitted_workflow_status(
+      role: "L1",
+      status: l1_status,
+      reviewer_name: submitted_reviewed_by_name(latest_l1_review&.l1_reviewed_by) || l1_reviewer[:name] || l1_reviewer[:code],
+      reviewed_at: latest_l1_review&.l1_reviewed_at || (latest_l1_action&.updated_at if l1_status != "pending")
+    )
+
+    quarterly_review = QuarterlyPliReview.find_by(
+      employee_detail: employee_detail,
+      financial_year: financial_year,
+      quarter: quarter
+    )
+    statuses << submitted_workflow_status(
+      role: "Quarterly PLI (#{quarter})",
+      status: quarterly_review&.status || "pending",
+      reviewer_name: submitted_reviewed_by_name(quarterly_review&.reviewed_by),
+      reviewed_at: quarterly_review&.reviewed_at
+    )
+
+    statuses
+  end
+
+  def submitted_workflow_status(role:, status:, reviewer_name:, reviewed_at:)
+    normalized_status = %w[approved returned].include?(status.to_s) ? status.to_s : "pending"
+    {
+      role: role,
+      status: normalized_status,
+      status_label: normalized_status.titleize,
+      reviewer_name: reviewer_name.to_s.strip.presence,
+      reviewed_at: reviewed_at
+    }
+  end
+
+  def quarter_name_for_submitted_month(month)
+    {
+      "april" => "Q1", "may" => "Q1", "june" => "Q1",
+      "july" => "Q2", "august" => "Q2", "september" => "Q2",
+      "october" => "Q3", "november" => "Q3", "december" => "Q3",
+      "january" => "Q4", "february" => "Q4", "march" => "Q4"
+    }[month.to_s.downcase]
+  end
+
   def submitted_reviewer_identity(raw_code, fallback_name = nil)
     code = raw_code.to_s.strip
     normalized_code = code.split(/\s+-\s+/, 2).first.to_s.strip

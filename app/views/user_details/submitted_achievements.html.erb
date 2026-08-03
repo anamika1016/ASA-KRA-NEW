@@ -55,6 +55,50 @@
           <% end %>
         </div>
 
+        <% @user_details.map(&:employee_detail).compact.uniq(&:id).each do |employee| %>
+          <% workflow_statuses = submitted_month_workflow_statuses(employee, @user_details, month, @selected_financial_year) %>
+          <section class="mb-5 rounded-xl border border-gray-200 bg-white p-4 shadow-sm" aria-label="<%= month_label %> review status">
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 class="text-base font-bold text-gray-800"><%= month_label %> review status</h3>
+                <% if @user_details.map(&:employee_detail_id).compact.uniq.many? %>
+                  <p class="text-xs text-gray-500"><%= employee.employee_name %></p>
+                <% end %>
+              </div>
+              <span class="rounded-full bg-violet-100 px-3 py-1 text-xs font-bold text-violet-800"><%= month_label %> · <%= @selected_financial_year %></span>
+            </div>
+
+            <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <% workflow_statuses.each do |item| %>
+                <%
+                  status_style = case item[:status]
+                  when "returned" then "border-red-200 bg-red-50 text-red-800"
+                  when "approved" then "border-green-200 bg-green-50 text-green-800"
+                  else "border-amber-200 bg-amber-50 text-amber-800"
+                  end
+                  status_icon = item[:status] == "returned" ? "fa-undo-alt" : (item[:status] == "approved" ? "fa-check-circle" : "fa-clock")
+                %>
+                <div class="rounded-lg border p-3 <%= status_style %>">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-sm font-bold"><%= item[:role] %></span>
+                    <span class="inline-flex items-center gap-1 rounded-full bg-white/80 px-2 py-1 text-xs font-bold">
+                      <i class="fas <%= status_icon %>"></i><%= item[:status_label] %>
+                    </span>
+                  </div>
+                  <% if item[:status] == "pending" %>
+                    <p class="mt-2 text-xs"><%= item[:reviewer_name].present? ? "Pending with #{item[:reviewer_name]}" : "Review pending" %></p>
+                  <% else %>
+                    <p class="mt-2 text-xs font-semibold"><%= item[:status_label] %> by <%= item[:reviewer_name].presence || item[:role] %></p>
+                    <% if item[:reviewed_at].present? %>
+                      <p class="mt-1 text-xs opacity-80"><%= item[:reviewed_at].in_time_zone.strftime("%d-%m-%Y %I:%M %p %Z") %></p>
+                    <% end %>
+                  <% end %>
+                </div>
+              <% end %>
+            </div>
+          </section>
+        <% end %>
+
         <div class="table-wrapper overflow-auto bg-white rounded-lg border border-gray-200 shadow-sm">
           <% visible_details = @user_details.select { |detail| submitted_month_row_visible?(detail, month) } %>
           <% if visible_details.any? %>
