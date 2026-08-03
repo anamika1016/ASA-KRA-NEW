@@ -2135,10 +2135,14 @@ class UserDetailsController < ApplicationController
   end
 
   def send_l1_submission_sms_once(employee_detail, quarter, month, user_detail)
-    return { success: true, message: "L1 SMS already sent", already_sent: true } if check_sms_already_sent(employee_detail.id, quarter, month)
+    l1_manager = employee_detail_for_code(employee_detail.l1_code)
+    return { success: false, error: "L1 manager not found with code: #{employee_detail.l1_code}" } unless l1_manager
+    if check_sms_already_sent(employee_detail.id, quarter, month, recipient_employee_detail_id: l1_manager.id)
+      return { success: true, message: "L1 SMS already sent", already_sent: true }
+    end
 
     result = send_sms_to_l1(employee_detail, quarter, user_detail)
-    mark_sms_as_sent(employee_detail.id, quarter, month) if result[:success]
+    mark_sms_as_sent(employee_detail.id, quarter, month, recipient_employee_detail_id: l1_manager.id) if result[:success]
     result
   end
 
@@ -2178,7 +2182,15 @@ class UserDetailsController < ApplicationController
   def send_sms_to_observer(employee_detail, quarter, month, observer_level)
     observer_code = employee_detail.public_send(observer_level).to_s.strip
     return { success: false, error: "#{observer_level} code not found" } if observer_code.blank?
-    if observer_sms_already_sent?(employee_detail.id, quarter, month, observer_level)
+
+    observer = employee_detail_for_code(observer_code)
+    unless observer
+      error = "#{observer_label(observer_level)} not found with code: #{observer_code}"
+      Rails.logger.warn "Observer SMS skipped: #{error} for employee_detail_id=#{employee_detail.id}"
+      return { success: false, error: error, observer_level: observer_level, observer_code: observer_code }
+    end
+
+    if observer_sms_already_sent?(employee_detail.id, quarter, month, observer_level, observer.id)
       return {
         success: true,
         already_sent: true,
@@ -2186,13 +2198,6 @@ class UserDetailsController < ApplicationController
         observer_level: observer_level,
         observer_code: observer_code
       }
-    end
-
-    observer = employee_detail_for_code(observer_code)
-    unless observer
-      error = "#{observer_label(observer_level)} not found with code: #{observer_code}"
-      Rails.logger.warn "Observer SMS skipped: #{error} for employee_detail_id=#{employee_detail.id}"
-      return { success: false, error: error, observer_level: observer_level, observer_code: observer_code }
     end
 
     if observer.mobile_number.blank?
@@ -2283,10 +2288,19 @@ class UserDetailsController < ApplicationController
   end
 
   def observer_approval_locks_month?(employee_detail_id, financial_year, month)
+    employee_detail = EmployeeDetail.find_by(id: employee_detail_id)
+    return false unless employee_detail
+
+    assigned_levels = ApplicationHelper::OBSERVER_LEVELS.select do |observer_level|
+      employee_detail.observer_assigned?(observer_level)
+    end
+    return false if assigned_levels.empty?
+
     reviews = ObserverPliReview.where(
       employee_detail_id: employee_detail_id,
       financial_year: financial_year,
-      month: month.to_s.downcase
+      month: month.to_s.downcase,
+      observer_level: assigned_levels
     )
 
     # A return must reopen the month even when an earlier observer in the
@@ -2385,18 +2399,26 @@ class UserDetailsController < ApplicationController
     render :view_sms_logs
   end
 
-  def check_sms_already_sent(employee_detail_id, quarter, month = nil)
+  def check_sms_already_sent(employee_detail_id, quarter, month = nil, recipient_employee_detail_id: nil)
     # Check if SMS was already sent for this quarter using database
     # Use employee_detail_id to track per employee, not per activity
-    SmsLog.exists?(employee_detail_id: employee_detail_id, quarter: quarter, month: month, recipient_role: "l1", sent: true)
+    SmsLog.exists?(
+      employee_detail_id: employee_detail_id,
+      quarter: quarter,
+      month: month,
+      recipient_role: "l1",
+      recipient_employee_detail_id: recipient_employee_detail_id,
+      sent: true
+    )
   end
 
-  def observer_sms_already_sent?(employee_detail_id, quarter, month, observer_level)
+  def observer_sms_already_sent?(employee_detail_id, quarter, month, observer_level, recipient_employee_detail_id)
     SmsLog.exists?(
       employee_detail_id: employee_detail_id,
       quarter: quarter,
       month: month,
       recipient_role: "observer",
+      recipient_employee_detail_id: recipient_employee_detail_id,
       observer_level: observer_level,
       sent: true
     )
@@ -2432,7 +2454,7 @@ class UserDetailsController < ApplicationController
     ApplicationHelper::OBSERVER_LEVELS.select do |observer_level|
       user_details.any? do |detail|
         employee = detail.employee_detail
-        employee.present? && employee.public_send(observer_level).to_s.strip.present?
+        employee.present? && employee.observer_assigned?(observer_level)
       end
     end
   end
@@ -2446,6 +2468,8 @@ class UserDetailsController < ApplicationController
 
     ApplicationHelper::OBSERVER_LEVELS.each_with_index do |observer_level, index|
       observer_values = employees.filter_map do |employee|
+        next unless employee.observer_assigned?(observer_level)
+
         reviewer_name_for(employee.public_send(observer_level), nil, reviewer_names_by_code)
       end
       badges << { label: "OB#{index + 1} Name", value: summarized_reviewer_value(observer_values) } if observer_values.any?

@@ -1549,10 +1549,14 @@ end
     return { success: true, sent: false, message: "Observer approval chain is still pending" } unless observer_chain_approved_for_month?(employee_detail, financial_year, quarter, month)
 
     quarter_label = quarter_sms_label(quarter)
-    return { success: true, sent: false, message: "L1 SMS already sent" } if l1_sms_already_sent?(employee_detail.id, quarter_label, month)
+    l1_manager = employee_detail_for_code(employee_detail.l1_code)
+    return { success: false, sent: false, error: "L1 manager not found with code: #{employee_detail.l1_code}" } unless l1_manager
+    if l1_sms_already_sent?(employee_detail.id, quarter_label, month, l1_manager.id)
+      return { success: true, sent: false, message: "L1 SMS already sent" }
+    end
 
     result = send_sms_to_l1_after_observers(employee_detail, quarter_label, month)
-    mark_l1_sms_as_sent(employee_detail.id, quarter_label, month) if result[:success]
+    mark_l1_sms_as_sent(employee_detail.id, quarter_label, month, l1_manager.id) if result[:success]
     result.merge(sent: result[:success])
   end
 
@@ -1569,22 +1573,24 @@ end
     SmsNotificationService.send_message(l1_manager.mobile_number, message)
   end
 
-  def l1_sms_already_sent?(employee_detail_id, quarter, month)
+  def l1_sms_already_sent?(employee_detail_id, quarter, month, recipient_employee_detail_id)
     SmsLog.exists?(
       employee_detail_id: employee_detail_id,
       quarter: quarter,
       month: month,
       recipient_role: "l1",
+      recipient_employee_detail_id: recipient_employee_detail_id,
       sent: true
     )
   end
 
-  def mark_l1_sms_as_sent(employee_detail_id, quarter, month)
+  def mark_l1_sms_as_sent(employee_detail_id, quarter, month, recipient_employee_detail_id)
     SmsLog.create!(
       employee_detail_id: employee_detail_id,
       quarter: quarter,
       month: month,
       recipient_role: "l1",
+      recipient_employee_detail_id: recipient_employee_detail_id,
       sent: true,
       sent_at: Time.current
     )
