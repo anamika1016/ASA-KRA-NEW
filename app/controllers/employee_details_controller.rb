@@ -5,7 +5,7 @@ require "set"
 
 class EmployeeDetailsController < ApplicationController
   before_action :set_employee_detail, only: [ :edit, :update, :destroy, :toggle_portal_status, :update_portal_role ]
-  load_and_authorize_resource except: [ :show, :approve, :return, :l2_approve, :l2_return, :edit_l1, :edit_l2, :toggle_portal_status, :update_portal_role, :toggle_sidebar_menu, :bulk_update_portal_status, :bulk_destroy, :quarterly_pli, :export_quarterly_pli_xlsx, :quarterly_pli_detail, :archived_detail, :save_quarterly_pli, :observer_1, :observer_2, :observer_3, :observer_4, :observer_pli_detail, :save_observer_pli, :kra_targets, :export_kra_targets, :submission_overview, :archived, :export_submission_overview_xlsx, :export_l1_xlsx, :export_observer_pli_xlsx ]
+  load_and_authorize_resource except: [ :show, :approve, :return, :l2_approve, :l2_return, :edit_l1, :edit_l2, :toggle_portal_status, :update_portal_role, :toggle_sidebar_menu, :bulk_update_portal_status, :bulk_destroy, :quarterly_pli, :export_quarterly_pli_xlsx, :quarterly_pli_detail, :archived_detail, :save_quarterly_pli, :observer_1, :observer_2, :observer_3, :observer_4, :observer_pli_detail, :save_observer_pli, :kra_targets, :export_kra_targets, :submission_overview, :archived, :export_archived_xlsx, :export_submission_overview_xlsx, :export_l1_xlsx, :export_observer_pli_xlsx ]
 
   def index
     @employee_detail = EmployeeDetail.new
@@ -546,6 +546,20 @@ class EmployeeDetailsController < ApplicationController
       submitted_rows = history_rows.select { |row| row[:submitted_count].positive? }
       @selected_archived_status.present? ? submitted_rows.select { |row| row[:history_status] == @selected_archived_status } : submitted_rows
     end
+  end
+
+  def export_archived_xlsx
+    unless current_user.hod? || current_user.admin? || employee_menu_access_enabled?(:archived)
+      redirect_to root_path, alert: "You are not authorized to export KRA History."
+      return
+    end
+
+    rows, selected_quarter = load_archived_rows_for_export
+    package = build_archived_xlsx(rows, selected_quarter)
+    send_review_xlsx(
+      package,
+      [ "kra_history", params[:financial_year].presence, selected_quarter.presence, Date.current ]
+    )
   end
 
   def archived_detail
@@ -3168,6 +3182,153 @@ end
         ]
       end
     )
+  end
+
+  def load_archived_rows_for_export
+    employee_details = EmployeeDetail.includes(
+      :quarterly_pli_reviews,
+      :observer_pli_reviews,
+      user_details: [ :activity, :department, achievements: :achievement_remark ]
+    ).order(Arel.sql("LOWER(employee_name) ASC"))
+    selected_quarter = get_all_quarters.include?(params[:quarter]) ? params[:quarter] : nil
+    selected_status = %w[submitted pending approved returned not_submitted].include?(params[:status]) ? params[:status] : nil
+
+    monthly_data = build_admin_submission_overview_data(
+      employee_details,
+      financial_year: params[:financial_year].presence
+    )
+    rows = build_archived_rows(monthly_data)
+    rows.select! { |row| row[:quarter] == selected_quarter } if selected_quarter.present?
+    rows.each { |row| row[:history_status] = archived_row_status(row) }
+
+    rows = if selected_status == "not_submitted"
+      rows.group_by { |row| row[:employee].id }.filter_map do |_employee_id, employee_rows|
+        next if employee_rows.any? { |row| row[:submitted_count].positive? }
+
+        employee_rows.first
+      end
+    else
+      submitted_rows = rows.select { |row| row[:submitted_count].positive? }
+      selected_status.present? ? submitted_rows.select { |row| row[:history_status] == selected_status } : submitted_rows
+    end
+
+    [ rows, selected_quarter ]
+  end
+
+  def build_archived_xlsx(rows, selected_quarter)
+    package = Axlsx::Package.new
+    workbook = package.workbook
+    header_style, cell_style = review_xlsx_styles(workbook)
+    quarters = selected_quarter.present? ? [ selected_quarter ] : get_all_quarters
+
+    quarters.each do |quarter|
+      quarter_rows = rows.select { |row| row[:quarter] == quarter }
+      months = get_quarter_months(quarter)
+      headers = archived_xlsx_headers(months)
+
+      workbook.add_worksheet(name: "KRA History #{quarter}") do |sheet|
+        sheet.add_row headers, style: header_style
+        quarter_rows.each { |row| sheet.add_row archived_xlsx_row(row, months), style: cell_style }
+        sheet.column_widths(*headers.map { |header| header.include?("REMARK") || header.include?("PENDING") ? 28 : 18 })
+        sheet.auto_filter = "A1:#{Axlsx::col_ref(headers.length - 1)}1"
+        sheet.sheet_view.pane do |pane|
+          pane.top_left_cell = "A2"
+          pane.state = :frozen
+          pane.y_split = 1
+        end
+      end
+    end
+
+    package
+  end
+
+  def archived_xlsx_headers(months)
+    labels = months.map { |month| month_label(month).to_s.upcase.first(3) }
+    headers = [ "Employee Code", "Name", "Department", "Financial Year" ]
+    headers.concat(labels.map { |label| "#{label}%" })
+    headers.concat([ "Quarter%", "Quarterly PLI Status", "L1 NAME", "L1 REMARK" ])
+    1.upto(4) { |number| headers.concat([ "OBS #{number} NAME", "OBS#{number}_REMARK" ]) }
+    labels.each do |label|
+      1.upto(4) { |number| headers << "#{label} OBS#{number} STATUS" }
+      headers.concat([ "#{label} L1 STATUS", "#{label} PENDING WITH" ])
+    end
+    headers
+  end
+
+  def archived_xlsx_row(row, months)
+    employee = row[:employee]
+    payload = quarter_pli_payload_for(employee, row[:financial_year], row[:quarter], require_ready: false)
+    payload_months = Array(payload&.dig(:months)).index_by { |month| month[:key].to_s }
+    row_months = Array(row[:months]).index_by { |month| month[:month].to_s }
+
+    values = [ employee.employee_code, employee.employee_name, employee.department.presence || "-", row[:financial_year].presence || "-" ]
+    values.concat(months.map { |month| archived_month_percentage(row_months[month]) })
+    values.concat([
+      archived_percentage(row[:quarter_progress]),
+      row[:history_status].to_s.titleize,
+      employee.l1_employer_name.presence || employee.l1_code.presence || "-",
+      archived_remarks(payload_months.values.flat_map { |month| Array(month[:l1_remarks]) })
+    ])
+    1.upto(4) do |number|
+      level = "obs_code#{number}"
+      values.concat([
+        observer_employee_name_for(employee, level).presence || employee.public_send(level).presence || "-",
+        archived_remarks(payload_months.values.flat_map { |month| Array(month["#{level}_remarks".to_sym]) })
+      ])
+    end
+    months.each do |month|
+      month_data = row_months[month]
+      1.upto(4) { |number| values << archived_observer_status(employee, row, month, "obs_code#{number}", month_data) }
+      values.concat([ archived_l1_status(month_data), archived_month_pending_with(row, month_data) ])
+    end
+    values
+  end
+
+  def archived_percentage(value)
+    value.blank? || value.to_s == "-" ? "-" : "#{value}%"
+  end
+
+  def archived_month_percentage(month_data)
+    month_data.present? ? archived_percentage(month_data[:progress]) : "-"
+  end
+
+  def archived_remarks(remarks)
+    values = Array(remarks).map { |remark| remark.to_s.strip }.reject(&:blank?).reject { |remark| remark == "-" }.uniq
+    values.any? ? values.join("; ") : "-"
+  end
+
+  def archived_observer_status(employee, row, month, observer_level, month_data)
+    return "Not Assigned" unless observer_levels_for(employee).include?(observer_level)
+    return "Not Submitted" if month_data.blank? || month_data[:status] == "not_submitted"
+
+    review = employee.observer_pli_reviews.find do |item|
+      item.financial_year == row[:financial_year] && item.quarter == row[:quarter] &&
+        item.month.to_s == month.to_s && item.observer_level == observer_level
+    end
+    review&.status.to_s.presence&.titleize || "Pending"
+  end
+
+  def archived_l1_status(month_data)
+    return "Not Submitted" if month_data.blank? || month_data[:status] == "not_submitted"
+    return "Returned" if %w[l1_returned l2_returned].include?(month_data[:status])
+    return "Approved" if %w[l1_approved l2_approved].include?(month_data[:status])
+
+    "Pending"
+  end
+
+  def archived_month_pending_with(row, month_data)
+    return "Not Submitted" if month_data.blank? || month_data[:status] == "not_submitted"
+    return "Completed" if archived_l1_status(month_data) == "Approved"
+
+    reviewer = Array(row[:pending_with]).find do |item|
+      item[:role].to_s == month_data[:status_reviewer_role].to_s ||
+        item[:name].to_s == month_data[:status_reviewer_name].to_s
+    end
+    reviewer ||= {
+      role: month_data[:status_reviewer_role],
+      name: month_data[:status_reviewer_name]
+    }
+    [ reviewer[:role], reviewer[:name] ].compact_blank.uniq.join(" - ").presence || "Pending"
   end
 
   def build_l1_review_xlsx(monthly_data)

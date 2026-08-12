@@ -15,6 +15,14 @@
             <%= select_tag :financial_year, options_for_select([["All Financial Years", ""]] + @financial_year_options.map { |fy| [fy, fy] }, @selected_financial_year), class: "w-full sm:w-48 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500", onchange: "this.form.submit()" %>
             <%= select_tag :status, options_for_select([["All Status", ""], ["Submitted", "submitted"], ["Pending", "pending"], ["Approved", "approved"], ["Returned", "returned"], ["Not Submitted", "not_submitted"]], @selected_archived_status), class: "w-full sm:w-44 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500", onchange: "this.form.submit()" %>
           <% end %>
+          <%= link_to export_archived_xlsx_employee_details_path(
+                format: :xlsx,
+                quarter: @selected_quarter,
+                financial_year: @selected_financial_year,
+                status: @selected_archived_status
+              ), class: "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700", data: { turbo: false } do %>
+            <i class="fas fa-file-excel"></i> Export Excel
+          <% end %>
         </div>
       </div>
 

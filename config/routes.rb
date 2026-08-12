@@ -117,6 +117,7 @@ Rails.application.routes.draw do
       get :observer_4
       get :submission_overview
       get :archived
+      get :export_archived_xlsx
       get :export_submission_overview_xlsx
       get :export_l1_xlsx
       get :export_observer_pli_xlsx
