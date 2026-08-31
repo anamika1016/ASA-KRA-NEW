@@ -3244,9 +3244,9 @@ end
 
   def archived_xlsx_headers(months)
     labels = months.map { |month| month_label(month).to_s.upcase.first(3) }
-    headers = [ "Employee Code", "Name", "Department", "Financial Year" ]
+    headers = [ "Employee Code", "Name", "Department", "Post", "Financial Year" ]
     headers.concat(labels.map { |label| "#{label}%" })
-    headers.concat([ "Quarter%", "Quarterly PLI Status", "L1 NAME", "L1 REMARK" ])
+    headers.concat([ "Quarter%", "Final PLI %", "Quarterly PLI Status", "L1 NAME", "L1 REMARK" ])
     1.upto(4) { |number| headers.concat([ "OBS #{number} NAME", "OBS#{number}_REMARK" ]) }
     labels.each do |label|
       1.upto(4) { |number| headers << "#{label} OBS#{number} STATUS" }
@@ -3261,10 +3261,17 @@ end
     payload_months = Array(payload&.dig(:months)).index_by { |month| month[:key].to_s }
     row_months = Array(row[:months]).index_by { |month| month[:month].to_s }
 
-    values = [ employee.employee_code, employee.employee_name, employee.department.presence || "-", row[:financial_year].presence || "-" ]
+    values = [
+      employee.employee_code,
+      employee.employee_name,
+      employee.department.presence || "-",
+      employee.post.presence || "-",
+      row[:financial_year].presence || "-"
+    ]
     values.concat(months.map { |month| archived_month_percentage(row_months[month]) })
     values.concat([
       archived_percentage(row[:quarter_progress]),
+      archived_final_pli_percentage(row[:quarterly_review]),
       row[:history_status].to_s.titleize,
       employee.l1_employer_name.presence || employee.l1_code.presence || "-",
       archived_remarks(payload_months.values.flat_map { |month| Array(month[:l1_remarks]) })
@@ -3286,6 +3293,12 @@ end
 
   def archived_percentage(value)
     value.blank? || value.to_s == "-" ? "-" : "#{value}%"
+  end
+
+  def archived_final_pli_percentage(review)
+    return "-" unless review&.status == "approved" && review.final_percentage.present?
+
+    "#{format('%.2f', review.final_percentage.to_f)}%"
   end
 
   def archived_month_percentage(month_data)
