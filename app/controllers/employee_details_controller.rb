@@ -1038,7 +1038,7 @@ end
         "Quarter",
         "Calculated %",
         "Final PLI %",
-        "Final L1 Remarks"
+        "Quarterly PLI Remarks"
       ], style: header_style
 
       rows.each do |row|
@@ -1053,7 +1053,7 @@ end
           row[:quarter_label].presence || row[:quarter].presence || "-",
           quarterly_pli_export_percentage(row[:calculated_percentage]),
           review&.final_percentage.present? ? "#{format('%.2f', review.final_percentage.to_f)}%" : "-",
-          quarterly_pli_export_l1_remarks(row)
+          quarterly_pli_export_review_remarks(review)
         ], style: cell_style
       end
 
@@ -2283,12 +2283,8 @@ end
     "#{format('%.2f', numeric_value)}%"
   end
 
-  def quarterly_pli_export_l1_remarks(row)
-    remarks = Array(row.dig(:detail_payload, :months)).flat_map do |month_payload|
-      Array(month_payload[:l1_remarks])
-    end.map { |remark| remark.to_s.strip }.reject(&:blank?).uniq
-
-    remarks.any? ? remarks.join("; ") : "-"
+  def quarterly_pli_export_review_remarks(review)
+    review&.final_remarks.to_s.strip.presence || "-"
   end
 
   def quarter_ready_for_pli?(employee_detail, financial_year, quarter)
@@ -3246,7 +3242,8 @@ end
     labels = months.map { |month| month_label(month).to_s.upcase.first(3) }
     headers = [ "Employee Code", "Name", "Department", "Post", "Financial Year" ]
     headers.concat(labels.map { |label| "#{label}%" })
-    headers.concat([ "Quarter%", "Final PLI %", "Quarterly PLI Status", "L1 NAME", "L1 REMARK" ])
+    headers.concat([ "Quarter%", "Final PLI %", "Quarterly PLI Remarks", "Quarterly PLI Status", "L1 NAME" ])
+    headers.concat(labels.map { |label| "#{label} L1 REMARK" })
     1.upto(4) { |number| headers.concat([ "OBS #{number} NAME", "OBS#{number}_REMARK" ]) }
     labels.each do |label|
       1.upto(4) { |number| headers << "#{label} OBS#{number} STATUS" }
@@ -3272,10 +3269,11 @@ end
     values.concat([
       archived_percentage(row[:quarter_progress]),
       archived_final_pli_percentage(row[:quarterly_review]),
+      archived_quarterly_pli_remarks(row[:quarterly_review]),
       row[:history_status].to_s.titleize,
-      employee.l1_employer_name.presence || employee.l1_code.presence || "-",
-      archived_remarks(payload_months.values.flat_map { |month| Array(month[:l1_remarks]) })
+      employee.l1_employer_name.presence || employee.l1_code.presence || "-"
     ])
+    values.concat(months.map { |month| archived_remarks(payload_months[month]&.dig(:l1_remarks)) })
     1.upto(4) do |number|
       level = "obs_code#{number}"
       values.concat([
@@ -3299,6 +3297,10 @@ end
     return "-" unless review&.status == "approved" && review.final_percentage.present?
 
     "#{format('%.2f', review.final_percentage.to_f)}%"
+  end
+
+  def archived_quarterly_pli_remarks(review)
+    review&.final_remarks.to_s.strip.presence || "-"
   end
 
   def archived_month_percentage(month_data)
