@@ -941,7 +941,8 @@ class DepartmentManager {
     try {
       // For PATCH requests, we need to send the method in the form data
       if (this.isEditing) {
-        formData.append('_method', 'PATCH');
+        formData.set('_method', 'PATCH');
+        formData.set('employee_reference', empRef);
         
         // If editing, use the update_employee_activity_data endpoint
         const editUrl = `/departments/${this.editingId}/update_employee_activity_data`;
@@ -957,12 +958,6 @@ class DepartmentManager {
         
         console.log('Edit response status:', response.status);
         console.log('Edit response headers:', response.headers);
-        
-        // If the custom endpoint fails, try the regular update method
-        if (!response.ok) {
-          console.log('Custom endpoint failed, trying regular update method...');
-          return this.handleRegularUpdate(formData);
-        }
         
         return this.handleResponse(response);
       }
@@ -1024,7 +1019,7 @@ class DepartmentManager {
       // Add cache-busting parameter to ensure fresh data
       const timestamp = Date.now();
       const selectedFinancialYear = document.getElementById('department_financial_year')?.value || new URL(window.location).searchParams.get('financial_year') || '';
-      const response = await fetch(`/departments/${employeeId}/edit_data?t=${timestamp}&financial_year=${encodeURIComponent(selectedFinancialYear)}`, {
+      const response = await fetch(`/departments/${employeeId}/edit_data?employee_reference=${encodeURIComponent(employeeId)}&t=${timestamp}&financial_year=${encodeURIComponent(selectedFinancialYear)}`, {
         headers: {
           'X-CSRF-Token': csrfToken,
           'Accept': 'application/json', // Request JSON response
