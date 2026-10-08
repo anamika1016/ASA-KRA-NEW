@@ -1073,7 +1073,17 @@ class DepartmentManager {
       this.filterEmployeesByDepartment(department.department_type);
       // Wait a bit for the dropdown to be populated
       setTimeout(() => {
-        document.getElementById('department_employee_reference').value = department.employee_reference || '';
+        const employeeSelect = document.getElementById('department_employee_reference');
+        employeeSelect.value = department.employee_reference || '';
+        // The employee's stored department may not match this entry's department_type
+        // (e.g. the employee has activities under more than one department), which
+        // would leave the option hidden by filterEmployeesByDepartment even though
+        // it's the correct selection here. Force it visible so submit validation
+        // (which checks option.style.display) doesn't reject a valid selection.
+        const selectedOption = employeeSelect.selectedOptions[0];
+        if (selectedOption) {
+          selectedOption.style.display = '';
+        }
         console.log('Set employee reference to:', department.employee_reference);
       }, 100);
     }

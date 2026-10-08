@@ -2364,8 +2364,6 @@ class UserDetailsController < ApplicationController
   end
 
   def target_editable_for_month?(user_detail, month_key)
-    return false unless manual_kri_target_editable?(user_detail)
-
     current_value = normalize_import_display_value(user_detail.public_send(month_key))
     current_value.blank? || current_value.to_s == "0"
   end
