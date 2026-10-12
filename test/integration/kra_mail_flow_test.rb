@@ -60,7 +60,7 @@ class KraMailFlowTest < ActionDispatch::IntegrationTest
     assert_not SmsLog.exists?(employee_detail_id: @employee.id, recipient_role: "l1")
   end
 
-  test "submission when L1 has no mobile: mail still goes and is logged once" do
+  test "submission when L1 has no mobile: mail still goes, a resubmission mails as an update" do
     @l1.update!(mobile_number: nil)
 
     result = with_sms { notify_after_submission(@employee) }
@@ -71,7 +71,7 @@ class KraMailFlowTest < ActionDispatch::IntegrationTest
 
     clear_enqueued_jobs
     with_sms { notify_after_submission(@employee) }
-    assert_empty queued_mails, "second submission of the same month must not mail again"
+    assert_equal [ [ "kra_updated_to_l1", "ramesh.kra@example.com" ] ], queued_mails
   end
 
   test "with the relay off nothing changes: no mail, missing mobile still fails" do
@@ -84,6 +84,59 @@ class KraMailFlowTest < ActionDispatch::IntegrationTest
     assert_equal "L1 manager mobile number not found", result[:error]
     assert_empty queued_mails
     assert_not SmsLog.exists?(employee_detail_id: @employee.id)
+  end
+
+  # ---- the real submit button (Achievement Form) --------------------------
+
+  test "submit then edit and submit again: L1 gets SMS once, mail both times" do
+    detail = month_target(@employee)
+    sign_in employee_user
+
+    with_sms { submit_month(detail, "8") }
+    assert_redirected_or_ok
+    assert_equal [ "9876500001" ], @sms.map(&:first)
+    assert_equal [ [ "kra_submitted_to_l1", "ramesh.kra@example.com" ] ], queued_mails
+
+    clear_enqueued_jobs
+    @sms.clear
+    with_sms { submit_month(detail, "9") }
+    assert_redirected_or_ok
+    assert_empty @sms, "SMS goes only once per month"
+    assert_equal [ [ "kra_updated_to_l1", "ramesh.kra@example.com" ] ], queued_mails
+    mail = queued_params.first
+    assert_equal "KRA MIS updated - Asha Devi (April (Q1 (APR-JUN)))", mail["subject"]
+    assert_equal "April", mail["month"]
+  end
+
+  test "edit and submit again with observers: observer gets mail again, L1 nothing" do
+    @employee.update!(obs_code1: "KO1")
+    detail = month_target(@employee)
+    sign_in employee_user
+
+    with_sms { submit_month(detail, "8") }
+    assert_equal [ [ "kra_submitted_to_observer", "sunita.kra@example.com" ] ], queued_mails
+
+    clear_enqueued_jobs
+    @sms.clear
+    with_sms { submit_month(detail, "9") }
+    assert_empty @sms
+    assert_equal [ [ "kra_updated_to_observer", "sunita.kra@example.com" ] ], queued_mails
+  end
+
+  test "observers approve again after an edit: L1 gets the mail without a second SMS" do
+    @employee.update!(obs_code1: "KO1")
+    submitted_month_data(@employee)
+    SmsLog.create!(employee_detail: @employee, quarter: QUARTER_LABEL, month: "april", recipient_role: "l1",
+                   recipient_employee_detail_id: @l1.id, sent: true, sent_at: Time.current)
+    sign_in @hod
+
+    with_sms do
+      post save_observer_pli_employee_details_path, params: observer_params("approve", "Ok again")
+    end
+
+    assert_nil flash[:alert]
+    assert_empty @sms
+    assert_includes queued_mails, [ "kra_observers_approved_to_l1", "ramesh.kra@example.com" ]
   end
 
   # ---- observer decision ------------------------------------------------
@@ -245,6 +298,33 @@ class KraMailFlowTest < ActionDispatch::IntegrationTest
     end
     detail.update!(april: "10")
     Achievement.create!(user_detail: detail, month: "april", achievement: "8", employee_remarks: "Done", status: status)
+  end
+
+  def month_target(employee)
+    department = Department.create!(department_type: "KRA Mail Dept", financial_year: FY, employee_reference: employee.employee_code)
+    activity = Activity.create!(department: department, activity_name: "KRA Mail Activity", unit: "Nos", weight: 10)
+    detail = UserDetail.find_or_create_by!(employee_detail: employee, department: department, activity: activity, financial_year: FY)
+    detail.update!(april: "10")
+    detail
+  end
+
+  def employee_user
+    user = User.find_by(email: @employee.employee_email) ||
+           User.create!(email: @employee.employee_email, password: "Password@123", employee_code: @employee.employee_code)
+    user.update!(role: "employee")
+    @employee.update_column(:user_id, user.id)
+    user
+  end
+
+  def submit_month(detail, value)
+    post submit_achievements_user_details_path,
+         params: { month: "april", financial_year: FY,
+                   achievement: { detail.id.to_s => { "april" => { achievement: value, employee_remarks: "Done" } } } }
+  end
+
+  def assert_redirected_or_ok
+    assert_includes [ 200, 302 ], response.status, response.body.first(300)
+    assert_nil flash[:alert], flash[:alert]
   end
 
   def observer_params(action_type, remarks)

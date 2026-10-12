@@ -2145,6 +2145,7 @@ class UserDetailsController < ApplicationController
     l1_manager = employee_detail_for_code(employee_detail.l1_code)
     return { success: false, error: "L1 manager not found with code: #{employee_detail.l1_code}" } unless l1_manager
     if check_sms_already_sent(employee_detail.id, quarter, month, recipient_employee_detail_id: l1_manager.id)
+      KraMailRelay.notify_update("kra_updated_to_l1", recipient: l1_manager, employee_detail: employee_detail, quarter: quarter, month: month)
       return { success: true, message: "L1 SMS already sent", already_sent: true }
     end
 
@@ -2198,6 +2199,8 @@ class UserDetailsController < ApplicationController
     end
 
     if observer_sms_already_sent?(employee_detail.id, quarter, month, observer_level, observer.id)
+      KraMailRelay.notify_update("kra_updated_to_observer", recipient: observer, employee_detail: employee_detail, quarter: quarter,
+                                                            month: month, reviewer_role: observer_label(observer_level))
       return {
         success: true,
         already_sent: true,

@@ -34,6 +34,8 @@ class KraMailRelay
     "kra_submitted_to_l1" => "asakra_submitted_to_l1.aspx",
     "kra_submitted_to_observer" => "asakra_submitted_to_observer.aspx",
     "kra_observers_approved_to_l1" => "asakra_observers_approved_to_l1.aspx",
+    "kra_updated_to_l1" => "asakra_updated_to_l1.aspx",
+    "kra_updated_to_observer" => "asakra_updated_to_observer.aspx",
     "employee_observer_approved" => "asakra_employee_observer_approved.aspx",
     "employee_observer_returned" => "asakra_employee_observer_returned.aspx",
     "employee_l1_approved" => "asakra_employee_l1_approved.aspx",
@@ -49,6 +51,8 @@ class KraMailRelay
     "kra_submitted_to_l1" => "KRA MIS submitted - %{employee_name} (%{quarter})",
     "kra_submitted_to_observer" => "KRA MIS submitted for observer review - %{employee_name} (%{quarter})",
     "kra_observers_approved_to_l1" => "KRA MIS ready for L1 review - %{employee_name} (%{quarter})",
+    "kra_updated_to_l1" => "KRA MIS updated - %{employee_name} (%{period})",
+    "kra_updated_to_observer" => "KRA MIS updated for observer review - %{employee_name} (%{period})",
     "employee_observer_approved" => "Your KRA MIS %{period} approved by %{reviewer_role} %{reviewer_name}",
     "employee_observer_returned" => "Your KRA MIS %{period} returned by %{reviewer_role} %{reviewer_name}",
     "employee_l1_approved" => "Your KRA MIS %{period} approved by L1 %{reviewer_name}",
@@ -93,6 +97,15 @@ class KraMailRelay
     return sms_result if sms_result[:success] || !mail_queued
 
     sms_result.merge(success: true, mail_only: true, message: "Email sent; SMS not sent (#{sms_result[:error]})")
+  end
+
+  # The employee edited and submitted a month again. The SMS goes only once per
+  # month, but the reviewer gets a mail every time.
+  def self.notify_update(kind, recipient:, employee_detail:, quarter:, month: nil, reviewer_role: nil)
+    message = "#{employee_detail.employee_name} has updated the KRA MIS for #{period_for(quarter, month)}. " \
+              "Please review and approve in the system. Action For Social Advancement (ASA)"
+    notify(kind, recipient: recipient, employee_detail: employee_detail, quarter: quarter, message: message,
+                 month: month, reviewer_role: reviewer_role)
   end
 
   # Tells the employee who approved or returned their KRA MIS. kind is

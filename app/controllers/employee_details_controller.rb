@@ -1575,6 +1575,10 @@ end
     l1_manager = employee_detail_for_code(employee_detail.l1_code)
     return { success: false, sent: false, error: "L1 manager not found with code: #{employee_detail.l1_code}" } unless l1_manager
     if l1_sms_already_sent?(employee_detail.id, quarter_label, month, l1_manager.id)
+      # Observers approved again after an edit: no second SMS, but L1 gets the mail.
+      KraMailRelay.notify("kra_observers_approved_to_l1", recipient: l1_manager, employee_detail: employee_detail, quarter: quarter_label,
+                                                           message: SmsNotificationService.submission_message(employee_detail.employee_name, quarter_label),
+                                                           month: month)
       return { success: true, sent: false, message: "L1 SMS already sent" }
     end
 

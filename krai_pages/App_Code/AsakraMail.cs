@@ -39,6 +39,8 @@ public static class AsakraMail
         { "kra_submitted_to_l1", new[] { "KRA MIS submitted for your review", Blue, "Review in KRA portal" } },
         { "kra_submitted_to_observer", new[] { "KRA MIS submitted for observer review", Blue, "Review in KRA portal" } },
         { "kra_observers_approved_to_l1", new[] { "KRA MIS ready for your L1 review", Blue, "Review in KRA portal" } },
+        { "kra_updated_to_l1", new[] { "KRA MIS updated - please review", Blue, "Review in KRA portal" } },
+        { "kra_updated_to_observer", new[] { "KRA MIS updated - please review", Blue, "Review in KRA portal" } },
         { "employee_observer_approved", new[] { "Your KRA MIS was approved by the observer", Green, "Open KRA portal" } },
         { "employee_observer_returned", new[] { "Your KRA MIS was returned by the observer", Red, "Check and resubmit" } },
         { "employee_l1_approved", new[] { "Your KRA MIS was approved by L1", Green, "Open KRA portal" } },
