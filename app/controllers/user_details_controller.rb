@@ -2076,7 +2076,7 @@ class UserDetailsController < ApplicationController
   end
 
   # SMS functionality for quarterly notifications
-  def send_sms_to_l1(employee_detail, quarter, user_detail)
+  def send_sms_to_l1(employee_detail, quarter, user_detail, month = nil)
     begin
       # Get L1 manager's mobile number (not the employee's mobile number)
       l1_code = employee_detail.l1_code
@@ -2086,12 +2086,17 @@ class UserDetailsController < ApplicationController
       l1_manager = EmployeeDetail.find_by("employee_code LIKE ?", l1_code.strip + "%")
       return { success: false, error: "L1 manager not found with code: #{l1_code}" } unless l1_manager.present?
 
-      l1_mobile = l1_manager.mobile_number
-      return { success: false, error: "L1 manager mobile number not found" } unless l1_mobile.present?
-
       message = SmsNotificationService.submission_message(employee_detail.employee_name, quarter)
+      mail_queued = KraMailRelay.notify("kra_submitted_to_l1", recipient: l1_manager, employee_detail: employee_detail, quarter: quarter,
+                                                               message: message, month: month)
 
-      SmsNotificationService.send_message(l1_mobile, message)
+      l1_mobile = l1_manager.mobile_number
+      sms_result = if l1_mobile.present?
+        SmsNotificationService.send_message(l1_mobile, message)
+      else
+        { success: false, error: "L1 manager mobile number not found" }
+      end
+      KraMailRelay.with_mail(sms_result, mail_queued)
 
     rescue => e
       Rails.logger.error "SMS service error: #{e.message}"
@@ -2102,8 +2107,10 @@ class UserDetailsController < ApplicationController
 
   def notify_reviewers_after_submission(employee_detail, quarter, month, user_detail)
     observer_levels = observer_levels_for_employee(employee_detail)
+    # With observers the submission goes to them; L1 hears once they have all
+    # approved (EmployeeDetailsController#notify_l1_after_observer_chain_approval).
     observer_result = observer_levels.any? ? send_sms_to_observers(employee_detail, quarter, month, observer_levels) : nil
-    l1_result = send_l1_submission_sms_once(employee_detail, quarter, month, user_detail)
+    l1_result = observer_levels.any? ? nil : send_l1_submission_sms_once(employee_detail, quarter, month, user_detail)
 
     notification_results = [ observer_result, l1_result ].compact
     successful_results = notification_results.select { |result| result[:success] }
@@ -2141,7 +2148,7 @@ class UserDetailsController < ApplicationController
       return { success: true, message: "L1 SMS already sent", already_sent: true }
     end
 
-    result = send_sms_to_l1(employee_detail, quarter, user_detail)
+    result = send_sms_to_l1(employee_detail, quarter, user_detail, month)
     mark_sms_as_sent(employee_detail.id, quarter, month, recipient_employee_detail_id: l1_manager.id) if result[:success]
     result
   end
@@ -2200,14 +2207,18 @@ class UserDetailsController < ApplicationController
       }
     end
 
+    message = SmsNotificationService.submission_message(employee_detail.employee_name, quarter)
+    mail_queued = KraMailRelay.notify("kra_submitted_to_observer", recipient: observer, employee_detail: employee_detail, quarter: quarter,
+                                                                   message: message, month: month, reviewer_role: observer_label(observer_level))
+
     if observer.mobile_number.blank?
       error = "#{observer_label(observer_level)} mobile number not found for code: #{observer_code}"
       Rails.logger.warn "Observer SMS skipped: #{error} for employee_detail_id=#{employee_detail.id}"
-      return { success: false, error: error, observer_level: observer_level, observer_code: observer_code, observer_name: observer.employee_name }
+      sms_result = { success: false, error: error }
+    else
+      sms_result = SmsNotificationService.send_message(observer.mobile_number, message)
     end
-
-    message = SmsNotificationService.submission_message(employee_detail.employee_name, quarter)
-    result = SmsNotificationService.send_message(observer.mobile_number, message)
+    result = KraMailRelay.with_mail(sms_result, mail_queued)
 
     if result[:success]
       mark_sms_as_sent(

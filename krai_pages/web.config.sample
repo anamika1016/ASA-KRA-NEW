@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Merge these settings into krai's existing web.config. Do not replace the file.
+-->
+<configuration>
+  <appSettings>
+    <!-- SMTP that krai already uses for mails. Leave AsakraSmtpHost empty to use
+         <system.net><mailSettings> below (or the one krai already has). -->
+    <add key="AsakraSmtpHost" value="smtp.example.com" />
+    <add key="AsakraSmtpPort" value="587" />
+    <add key="AsakraSmtpUser" value="noreply@asaindia.org" />
+    <add key="AsakraSmtpPassword" value="CHANGE_ME" />
+    <add key="AsakraSmtpEnableSsl" value="true" />
+
+    <!-- Sender shown in the mail -->
+    <add key="AsakraMailFrom" value="noreply@asaindia.org" />
+    <add key="AsakraMailFromName" value="ASA KRA Portal" />
+
+    <!-- Public IP of the KRA server (asakra.asaindia.org). Only it may call the
+         page. Comma separated; empty = anyone can call them. -->
+    <add key="AsakraAllowedIps" value="" />
+
+    <!-- Links in the mail must start with this -->
+    <add key="AsakraLinkBase" value="https://asakra.asaindia.org" />
+  </appSettings>
+
+  <!-- The KRA server calls the page without logging in. If krai uses Forms
+       login, keep the page open like this. -->
+  <location path="asakra_notification.aspx"><system.web><authorization><allow users="*" /></authorization></system.web></location>
+
+  <!-- Only needed if AsakraSmtpHost is empty and krai has no mailSettings yet
+  <system.net>
+    <mailSettings>
+      <smtp from="noreply@asaindia.org">
+        <network host="smtp.example.com" port="587" userName="noreply@asaindia.org" password="CHANGE_ME" enableSsl="true" />
+      </smtp>
+    </mailSettings>
+  </system.net>
+  -->
+</configuration>

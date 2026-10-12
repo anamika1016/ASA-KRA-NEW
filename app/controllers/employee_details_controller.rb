@@ -726,6 +726,7 @@ class EmployeeDetailsController < ApplicationController
       # Pass action_type parameter to indicate this is an approval action
       params[:action_type] = "approve"
       result = process_quarterly_l1_approval
+      notify_employee_of_review("l1", result)
 
       if result[:success]
         if request.format.json? || request.xhr? || params[:action_type].present?
@@ -752,6 +753,7 @@ class EmployeeDetailsController < ApplicationController
       # Pass action_type parameter to indicate this is an approval action
       params[:action_type] = "approve"
       result = process_quarterly_l2_approval
+      notify_employee_of_review("l2", result)
 
       if result[:success]
         if request.xhr? || params[:action_type].present?
@@ -809,6 +811,7 @@ class EmployeeDetailsController < ApplicationController
       # Pass action_type parameter to indicate this is a return action
       params[:action_type] = "return"
       result = process_quarterly_l1_return
+      notify_employee_of_review("l1", result)
 
       if result[:success]
         if request.format.json? || request.xhr? || params[:action_type].present?
@@ -835,6 +838,7 @@ class EmployeeDetailsController < ApplicationController
       # Pass action_type parameter to indicate this is a return action
       params[:action_type] = "return"
       result = process_quarterly_l2_return
+      notify_employee_of_review("l2", result)
 
       if result[:success]
         if request.xhr? || params[:action_type].present?
@@ -1148,6 +1152,7 @@ end
     review.reviewed_at = Time.current
 
     if review.save
+      mail_employee_decision("employee_pli_#{review.status}", employee_detail, quarter, nil, "PLI", review.final_remarks)
       notice_message = if review.status == "returned"
         "Quarterly PLI returned for #{employee_detail.employee_name}."
       else
@@ -1268,6 +1273,8 @@ end
 
     if review.save
       save_observer_activity_remarks(employee_detail, month, observer_level)
+      mail_employee_decision("employee_observer_#{review.status}", employee_detail, quarter, month,
+                             "OB#{observer_level.to_s.gsub(/\D/, '')}", review.final_remarks)
       l1_sms_result = review.status == "approved" ? notify_l1_after_observer_chain_approval(employee_detail, financial_year, quarter, month) : nil
       notice_message = review.status == "returned" ? "#{observer_menu_title(observer_level)} returned #{month_label(month)} for #{employee_detail.employee_name}." : "#{observer_menu_title(observer_level)} approved #{month_label(month)} for #{employee_detail.employee_name}."
       notice_message = "#{notice_message} L1 SMS sent." if l1_sms_result&.dig(:success) && l1_sms_result[:sent]
@@ -1312,6 +1319,7 @@ end
     # Pass action_type parameter to indicate this is an approval action
     params[:action_type] = "approve"
     result = process_quarterly_l2_approval
+    notify_employee_of_review("l2", result)
 
     if result[:success]
       if request.xhr? || params[:action_type].present?
@@ -1372,6 +1380,7 @@ end
     # Pass action_type parameter to indicate this is a return action
     params[:action_type] = "return"
     result = process_quarterly_l2_return
+    notify_employee_of_review("l2", result)
 
 
     if result[:success]
@@ -1580,11 +1589,43 @@ end
 
     l1_manager = employee_detail_for_code(l1_code)
     return { success: false, error: "L1 manager not found with code: #{l1_code}" } unless l1_manager
-    return { success: false, error: "L1 manager mobile number not found" } if l1_manager.mobile_number.blank?
 
     message = SmsNotificationService.submission_message(employee_detail.employee_name, quarter_label)
+    mail_queued = KraMailRelay.notify("kra_observers_approved_to_l1", recipient: l1_manager, employee_detail: employee_detail, quarter: quarter_label,
+                                                                       message: message, month: month)
 
-    SmsNotificationService.send_message(l1_manager.mobile_number, message)
+    sms_result = if l1_manager.mobile_number.present?
+      SmsNotificationService.send_message(l1_manager.mobile_number, message)
+    else
+      { success: false, error: "L1 manager mobile number not found" }
+    end
+    KraMailRelay.with_mail(sms_result, mail_queued)
+  end
+
+  # Mails the employee who approved or returned their KRA MIS at L1 or L2.
+  def notify_employee_of_review(level, result)
+    return unless result.is_a?(Hash) && result[:success]
+
+    month = normalize_month_param(params[:selected_month] || params[:month])
+    quarter = params[:selected_quarter].presence || params[:quarter].presence || quarter_for_month(month)
+    action = params[:action_type].to_s.include?("approve") ? "approved" : "returned"
+    mail_employee_decision("employee_#{level}_#{action}", @employee_detail, quarter, month, level.upcase, params[:remarks])
+  end
+
+  # Does nothing while the mail relay is off, and a mail problem never breaks
+  # the approve/return that triggered it.
+  def mail_employee_decision(kind, employee_detail, quarter, month, reviewer_role, remarks)
+    return unless KraMailRelay.enabled?
+
+    KraMailRelay.notify_employee(kind, employee_detail: employee_detail, quarter: quarter_sms_label(quarter), month: month,
+                                       reviewer_role: reviewer_role, reviewer_name: current_reviewer_name, remarks: remarks)
+  rescue StandardError => e
+    Rails.logger.error("Employee decision mail failed kind=#{kind} employee_detail_id=#{employee_detail&.id}: #{e.class} #{e.message}")
+  end
+
+  def current_reviewer_name
+    reviewer = current_user.employee_detail || EmployeeDetail.find_by(employee_email: current_user.email)
+    reviewer&.employee_name.presence || current_user.email
   end
 
   def l1_sms_already_sent?(employee_detail_id, quarter, month, recipient_employee_detail_id)
