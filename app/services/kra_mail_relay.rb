@@ -63,6 +63,8 @@ class KraMailRelay
     "employee_pli_returned" => "Your Quarterly PLI %{period} returned by %{reviewer_name}"
   }.freeze
 
+  KRAI_SENT = /email sent successfully/i
+  KRAI_REFUSED = /invalid|missing|not sent|failed|error/i
   DEFAULT_APP_URL = "https://asakra.asaindia.org".freeze
   TIMEOUT_SECONDS = 15
   MAX_REDIRECTS = 3
@@ -145,11 +147,13 @@ class KraMailRelay
     }
   end
 
+  # krai's page only accepts these action words (anything else is answered
+  # "Invalid KRA action." and no mail goes): pending, approved, rejected.
   def self.action_for(kind)
     return "approved" if kind.to_s.end_with?("_approved")
-    return "returned" if kind.to_s.end_with?("_returned")
+    return "rejected" if kind.to_s.end_with?("_returned")
 
-    "submitted"
+    "pending"
   end
 
   # "April (Q1 (APR-JUN))", or just the quarter when the action covers all of it.
@@ -232,7 +236,11 @@ class KraMailRelay
     return false unless response.is_a?(Net::HTTPSuccess)
 
     body = parsed_body(response)
-    return true unless body.is_a?(Hash)
+    # krai's page answers 200 with an HTML message, also when it refused to send.
+    unless body.is_a?(Hash)
+      text = reply_text(response)
+      return text.match?(KRAI_SENT) || !text.match?(KRAI_REFUSED)
+    end
     return false if body.key?("success") && !ActiveModel::Type::Boolean.new.cast(body["success"])
 
     !body["status"].to_s.downcase.in?(%w[error failed failure])
@@ -241,7 +249,7 @@ class KraMailRelay
   def self.failure_message(response)
     body = parsed_body(response)
     detail = body["message"] || body["error"] if body.is_a?(Hash)
-    detail ||= response.body.to_s.gsub(/<[^>]+>/, " ").squish.first(160)
+    detail ||= reply_text(response)
     "Mail service returned #{response.code}: #{detail.presence || response.message}"
   end
 

@@ -80,6 +80,27 @@ class KraMailRelayTest < ActiveSupport::TestCase
     end
   end
 
+  test "krai refusing with 200 counts as a failure" do
+    refused = ->(_uri) { FakeResponse.new("200", "<html><style>body{}</style><div>KRA Email Notification Invalid KRA action.</div></html>", "OK", true) }
+    sent = ->(_uri) { FakeResponse.new("200", "<html><div>Email sent successfully to l1.manager@example.com</div><p>Remarks: target failed</p></html>", "OK", true) }
+    params = { "to_email" => "l1.manager@example.com" }
+
+    with_env("KRA_MAIL_RELAY_URL" => "https://krai.asaindia.org/asakra_notification.aspx") do
+      error = KraMailRelay.stub(:get, refused) do
+        assert_raises(KraMailRelay::DeliveryError) { KraMailRelay.deliver!("kra_submitted_to_l1", params) }
+      end
+      assert_includes error.message, "Invalid KRA action."
+      KraMailRelay.stub(:get, sent) { assert KraMailRelay.deliver!("kra_submitted_to_l1", params) }
+    end
+  end
+
+  test "action words are the ones krai accepts" do
+    assert_equal "pending", KraMailRelay.action_for("kra_submitted_to_l1")
+    assert_equal "pending", KraMailRelay.action_for("kra_updated_to_observer")
+    assert_equal "approved", KraMailRelay.action_for("employee_l1_approved")
+    assert_equal "rejected", KraMailRelay.action_for("employee_observer_returned")
+  end
+
   test "a failing mail service never breaks the job" do
     fake = ->(_uri) { FakeResponse.new("404", "The resource cannot be found.", "Not Found", false) }
 
@@ -125,7 +146,7 @@ class KraMailRelayTest < ActiveSupport::TestCase
     assert_equal "Dear Asha Devi, your KRA MIS for April (Q1 (APR-JUN)) has been returned by L1 L1 Manager. Please check and resubmit. Remarks: Add proof", query["message"]
     assert_equal "https://asakra.asaindia.org/user_details/get_user_detail", query["link"]
     assert_equal "April", query["month"]
-    assert_equal "returned", query["action"]
+    assert_equal "rejected", query["action"]
     assert_equal "L1 Manager", query["reviewer_name"]
     assert_equal "Add proof", query["remarks"]
     assert_equal "employee_l1_returned", query["mail_type"]
