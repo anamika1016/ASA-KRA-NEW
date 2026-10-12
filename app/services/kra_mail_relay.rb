@@ -195,7 +195,7 @@ class KraMailRelay
     raise DeliveryError, "Mail service asked for a login #{where}" if login_page?(final_uri)
     raise DeliveryError, "#{failure_message(response)} #{where}" unless success?(response)
 
-    Rails.logger.info("KraMailRelay sent kind=#{kind} to=#{params['to_email']} status=#{response.code} #{where}")
+    Rails.logger.info("KraMailRelay sent kind=#{kind} to=#{params['to_email']} status=#{response.code} #{where} krai_said=#{reply_text(response).inspect}")
     true
   end
 
@@ -243,6 +243,11 @@ class KraMailRelay
     detail = body["message"] || body["error"] if body.is_a?(Hash)
     detail ||= response.body.to_s.gsub(/<[^>]+>/, " ").squish.first(160)
     "Mail service returned #{response.code}: #{detail.presence || response.message}"
+  end
+
+  # What krai's page said, as plain text, so the log shows whether it really sent.
+  def self.reply_text(response)
+    response.body.to_s.gsub(%r{<(script|style)[^>]*>.*?</\1>}mi, " ").gsub(/<[^>]+>/, " ").squish.first(200)
   end
 
   def self.parsed_body(response)
