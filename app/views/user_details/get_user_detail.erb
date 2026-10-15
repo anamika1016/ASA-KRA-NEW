@@ -67,7 +67,6 @@
   <% if @user_details.any? && @selected_month.present? %>
     <!-- ======================== FORM TO SUBMIT ACHIEVEMENTS ======================== -->
     <%= form_with url: submit_achievements_user_details_path, method: :post, local: true, id: "achievementForm", html: { novalidate: true } do %>
-      <%= hidden_field_tag :authenticity_token, form_authenticity_token %>
       <%= hidden_field_tag :financial_year, @selected_financial_year %>
       <%= hidden_field_tag :month, @selected_month, id: "selectedSubmissionMonth" %>
       <%= hidden_field_tag :employee_detail_id, @employee_detail&.id %>
