@@ -111,9 +111,9 @@ class ApplicationController < ActionController::Base
   end
 
   def has_quarterly_pli_report_responsibilities?
-    return true if current_user.hod? || current_user.admin?
+    return true if current_user.admin?
 
-    menu_access_enabled?(:quarterly_pli_report) && l1_assignment_exists?
+    menu_access_enabled?(:quarterly_pli_report) && portal_employee_detail_for(current_user).present?
   end
 
   def normalize_financial_year(value)

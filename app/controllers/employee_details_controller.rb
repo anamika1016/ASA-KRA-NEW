@@ -1981,24 +1981,19 @@ end
   end
 
   def quarterly_pli_report_authorized?
-    return true if current_user.hod? || current_user.admin?
+    return true if current_user.admin?
     return false unless menu_access_enabled?(:quarterly_pli_report)
 
-    codes = current_user_reviewer_codes
-    codes.any? && EmployeeDetail.where(
-      "LOWER(TRIM(COALESCE(l1_code, ''))) IN (?)",
-      codes
-    ).exists?
+    portal_employee_detail_for(current_user).present?
   end
 
   def quarterly_pli_report_employee_scope
     scope = EmployeeDetail.order(Arel.sql("LOWER(employee_name) ASC"))
-    return scope if current_user.hod? || current_user.admin?
+    return scope if current_user.admin?
+    return scope.none unless menu_access_enabled?(:quarterly_pli_report)
 
-    codes = current_user_reviewer_codes
-    return scope.none if codes.empty? || !menu_access_enabled?(:quarterly_pli_report)
-
-    scope.where("LOWER(TRIM(COALESCE(l1_code, ''))) IN (?)", codes)
+    employee_detail = portal_employee_detail_for(current_user)
+    employee_detail.present? ? scope.where(id: employee_detail.id) : scope.none
   end
 
   def quarterly_pli_employee_scope
