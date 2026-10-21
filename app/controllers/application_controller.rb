@@ -111,7 +111,7 @@ class ApplicationController < ActionController::Base
   end
 
   def has_quarterly_pli_report_responsibilities?
-    return true if current_user.admin?
+    return true if current_user.hod? || current_user.admin?
 
     menu_access_enabled?(:quarterly_pli_report) && portal_employee_detail_for(current_user).present?
   end

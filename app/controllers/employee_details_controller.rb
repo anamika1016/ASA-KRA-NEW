@@ -1983,7 +1983,7 @@ end
   end
 
   def quarterly_pli_report_authorized?
-    return true if current_user.admin?
+    return true if current_user.hod? || current_user.admin?
     return false unless menu_access_enabled?(:quarterly_pli_report)
 
     portal_employee_detail_for(current_user).present?
@@ -1991,7 +1991,7 @@ end
 
   def quarterly_pli_report_employee_scope
     scope = EmployeeDetail.order(Arel.sql("LOWER(employee_name) ASC"))
-    return scope if current_user.admin?
+    return scope if current_user.hod? || current_user.admin?
     return scope.none unless menu_access_enabled?(:quarterly_pli_report)
 
     employee_detail = portal_employee_detail_for(current_user)
