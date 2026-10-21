@@ -1002,6 +1002,7 @@ end
     end
     employee_details = quarterly_pli_report_employee_scope.includes(
       quarterly_pli_reviews: :reviewed_by,
+      observer_pli_reviews: :reviewed_by,
       user_details: [ :activity, :department, achievements: :achievement_remark ]
     )
     @financial_year_options = employee_details.flat_map { |employee| employee.user_details.map(&:financial_year) }
@@ -1027,7 +1028,8 @@ end
     selected_quarter = params[:quarter].presence
     selected_year = selected_financial_year || current_financial_year
     employee_details = quarterly_pli_report_employee_scope.includes(
-       quarterly_pli_reviews: :reviewed_by,
+      quarterly_pli_reviews: :reviewed_by,
+      observer_pli_reviews: :reviewed_by,
       user_details: [
         :activity,
         :department,
@@ -2360,7 +2362,10 @@ end
   end
 
   def quarterly_pli_employee_headers
-    [ "Employee Code", "Employee Name", "Department", "Financial Year", "Quarter" ]
+    [
+      "Employee Code", "Employee Name", "Department", "Financial Year", "Quarter",
+      "OB1 Name", "OB2 Name", "OB3 Name", "OB4 Name", "L1 Name", "Status"
+    ]
   end
 
   def quarterly_pli_employee_values(row)
@@ -2370,12 +2375,92 @@ end
       employee.employee_name.presence || "-",
       employee.department.presence || "-",
       row[:financial_year].presence || "-",
-      row[:quarter_label].presence || row[:quarter].presence || "-"
+      row[:quarter_label].presence || row[:quarter].presence || "-",
+      quarterly_pli_reviewer_name(employee, "obs_code1"),
+      quarterly_pli_reviewer_name(employee, "obs_code2"),
+      quarterly_pli_reviewer_name(employee, "obs_code3"),
+      quarterly_pli_reviewer_name(employee, "obs_code4"),
+      quarterly_pli_l1_name(employee),
+      quarterly_pli_export_status(row)
     ]
   end
 
   def quarterly_pli_employee_column_widths
-    [ 18, 28, 24, 18, 24 ]
+    [ 18, 28, 24, 18, 24, 24, 24, 24, 24, 24, 34 ]
+  end
+
+  def quarterly_pli_reviewer_name(employee, observer_level)
+    code = employee.public_send(observer_level).to_s.strip
+    return "-" if code.blank?
+
+    observer_employee_name_for(employee, observer_level).presence || code
+  end
+
+  def quarterly_pli_l1_name(employee)
+    code = employee.l1_code.to_s.strip
+    resolved_name = EmployeeDetail.find_by("LOWER(TRIM(employee_code)) = ?", code.downcase)&.employee_name if code.present?
+    resolved_name.presence || employee.l1_employer_name.presence || code.presence || "-"
+  end
+
+  def quarterly_pli_export_status(row)
+    employee = row[:employee]
+    review = row[:review]
+    if review&.status == "approved"
+      return "Approved (#{quarterly_pli_reviewed_by_name(review)})"
+    elsif review&.status == "returned"
+      return "Returned at Quarterly PLI (#{quarterly_pli_reviewed_by_name(review)})"
+    end
+
+    months = get_quarter_months(row[:quarter]).select do |month|
+      employee.user_details.any? do |detail|
+        detail.financial_year.to_s == row[:financial_year].to_s && target_present_for_review_month?(detail, month)
+      end
+    end
+    achievements = employee.user_details.select { |detail| detail.financial_year.to_s == row[:financial_year].to_s }
+                           .flat_map(&:achievements)
+                           .select { |achievement| months.include?(achievement.month.to_s.downcase) && achievement.achievement.present? }
+    return "Not Submitted" if achievements.empty?
+
+    months.each do |month|
+      ApplicationHelper::OBSERVER_LEVELS.each_with_index do |level, index|
+        next unless employee.observer_assigned?(level)
+
+        observer_review = employee.observer_pli_reviews.find do |item|
+          item.financial_year.to_s == row[:financial_year].to_s && item.quarter == row[:quarter] &&
+            item.month.to_s == month && item.observer_level == level
+        end
+        reviewer = quarterly_pli_reviewer_name(employee, level)
+        return "Returned at OB#{index + 1} (#{reviewer})" if observer_review&.status == "returned"
+        return "Pending at OB#{index + 1} (#{reviewer})" unless observer_review&.status == "approved"
+      end
+    end
+
+    l1_complete = months.all? do |month|
+      targeted_details = employee.user_details.select do |detail|
+        detail.financial_year.to_s == row[:financial_year].to_s && target_present_for_review_month?(detail, month)
+      end
+      targeted_details.all? do |detail|
+        achievement = detail.achievements.find do |item|
+          item.month.to_s.downcase == month && item.achievement.present?
+        end
+        achievement.present? && (
+          %w[l1_approved l2_approved].include?(achievement.status.to_s) ||
+          achievement.achievement_remark&.l1_remarks.present?
+        )
+      end
+    end
+    return "Pending at L1 (#{quarterly_pli_l1_name(employee)})" unless l1_complete
+
+    "Pending at Quarterly PLI"
+  end
+
+  def quarterly_pli_reviewed_by_name(review)
+    reviewer = review&.reviewed_by
+    return "Reviewer" if reviewer.blank?
+
+    code = reviewer.employee_code.to_s.strip
+    employee_name = EmployeeDetail.find_by("LOWER(TRIM(employee_code)) = ?", code.downcase)&.employee_name if code.present?
+    employee_name.presence || code.presence || reviewer.email.presence || "Reviewer"
   end
 
   def quarterly_pli_detailed_xlsx_styles(workbook)
