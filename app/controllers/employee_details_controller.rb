@@ -1013,7 +1013,8 @@ end
     @quarterly_pli_rows = build_quarterly_pli_rows(
       employee_details,
       financial_year: @selected_financial_year,
-      quarter: @selected_quarterly_pli_quarter
+      quarter: @selected_quarterly_pli_quarter,
+      require_ready: false
     )
   end
 
@@ -1043,7 +1044,8 @@ end
     rows = build_quarterly_pli_rows(
       employee_details,
       financial_year: selected_year,
-      quarter: selected_quarter
+      quarter: selected_quarter,
+      require_ready: false
     )
 
     package = build_quarterly_pli_detailed_xlsx(rows, selected_year)
@@ -2247,7 +2249,7 @@ end
     end
   end
 
-  def build_quarterly_pli_rows(employee_details, financial_year:, quarter: nil)
+  def build_quarterly_pli_rows(employee_details, financial_year:, quarter: nil, require_ready: true)
     return [] if financial_year.blank?
 
     quarters = quarter.present? ? [ quarter ] : get_all_quarters
@@ -2259,7 +2261,7 @@ end
 
     employee_details.flat_map do |employee|
       quarters.filter_map do |quarter_name|
-        payload = quarter_pli_payload_for(employee, financial_year, quarter_name)
+        payload = quarter_pli_payload_for(employee, financial_year, quarter_name, require_ready: require_ready)
         next unless payload
 
         review = current_quarterly_pli_review_for(
@@ -2400,7 +2402,7 @@ end
       label = month[:label].to_s.upcase.first(3)
       headers.concat([ "#{label} Target", "#{label} Achievement", "% Progress", "#{label} EMP REMARKS" ])
       1.upto(4) { |number| headers << "OB#{number} REMARKS" }
-      headers.concat([ "L1%", "L1 REMARKS" ])
+      headers << "L1 REMARKS"
     end
     headers.concat([ "Quarterly PLI %", "Quarterly PLI REMARKS" ])
     headers
@@ -2410,13 +2412,15 @@ end
     item_groups = {}
     Array(row.dig(:detail_payload, :months)).each do |month|
       Array(month[:items]).each do |item|
-        key = [ item[:kri], item[:unit], item[:annual_target] ]
+        key = item[:user_detail_id].presence || [ item[:kri], item[:unit], item[:annual_target] ]
         item_groups[key] ||= {}
+        item_groups[key][:identity] ||= [ item[:kri], item[:unit], item[:annual_target] ]
         item_groups[key][month[:key].to_s] = item
       end
     end
 
-    item_groups.map do |(kri, unit, annual_target), monthly_items|
+    item_groups.map do |_key, monthly_items|
+      kri, unit, annual_target = monthly_items.delete(:identity)
       ordered_items = months.map { |month| monthly_items[month[:key].to_s] }
       values = [ kri.presence || "-", unit.presence || "-", annual_target.presence || "-" ]
       ordered_items.each do |item|
@@ -2429,10 +2433,7 @@ end
         1.upto(4) do |number|
           values << quarterly_pli_export_item_value(item, "obs_code#{number}_remarks".to_sym)
         end
-        values.concat([
-          quarterly_pli_export_percentage(item&.dig(:l1_percentage)),
-          quarterly_pli_export_item_value(item, :l1_remarks)
-        ])
+        values << quarterly_pli_export_item_value(item, :l1_remarks)
       end
       review = row[:review]
       values.concat([
@@ -2448,7 +2449,7 @@ end
   end
 
   def quarterly_pli_detail_column_widths(months)
-    monthly_widths = months.flat_map { [ 15, 17, 14, 34 ] + Array.new(4, 26) + [ 14, 34 ] }
+    monthly_widths = months.flat_map { [ 15, 17, 14, 34 ] + Array.new(4, 26) + [ 34 ] }
     [ 42, 18, 22 ] + monthly_widths + [ 18, 42 ]
   end
 
@@ -2478,7 +2479,11 @@ end
     return nil if user_details.empty?
 
     reviewable_months = quarter_months.select do |quarter_month|
-      submitted_target_achievements_for_pli_month(user_details, quarter_month).any?
+      if require_ready
+        submitted_target_achievements_for_pli_month(user_details, quarter_month).any?
+      else
+        user_details.any? { |detail| target_present_for_review_month?(detail, quarter_month) }
+      end
     end
     return nil if reviewable_months.empty?
 
@@ -2505,6 +2510,7 @@ end
         remark = achievement&.achievement_remark
 
         {
+          user_detail_id: detail.id,
           kri: detail.activity&.activity_name.to_s,
           unit: detail.activity&.unit.to_s,
           annual_target: normalize_import_display_value(
@@ -2512,7 +2518,7 @@ end
             percent_context: detail.activity&.unit.to_s.strip == "%"
           ).presence || "-",
           target: display_review_number(target_number),
-          achievement: display_review_number(achievement_number),
+          achievement: achievement.present? ? display_review_number(achievement_number) : "-",
           progress_value: progress_value,
           progress: format_pli_percentage(progress_value),
           employee_remarks: achievement&.employee_remarks.to_s.presence || remark&.employee_remarks.to_s.presence || "-",
