@@ -5,7 +5,7 @@ require "set"
 
 class EmployeeDetailsController < ApplicationController
   before_action :set_employee_detail, only: [ :edit, :update, :destroy, :toggle_portal_status, :update_portal_role ]
-  load_and_authorize_resource except: [ :show, :approve, :return, :l2_approve, :l2_return, :edit_l1, :edit_l2, :toggle_portal_status, :update_portal_role, :toggle_sidebar_menu, :bulk_update_portal_status, :bulk_destroy, :quarterly_pli, :export_quarterly_pli_xlsx, :quarterly_pli_detail, :archived_detail, :save_quarterly_pli, :observer_1, :observer_2, :observer_3, :observer_4, :observer_pli_detail, :save_observer_pli, :kra_targets, :export_kra_targets, :submission_overview, :archived, :export_archived_xlsx, :export_submission_overview_xlsx, :export_l1_xlsx, :export_observer_pli_xlsx ]
+  load_and_authorize_resource except: [ :show, :approve, :return, :l2_approve, :l2_return, :edit_l1, :edit_l2, :toggle_portal_status, :update_portal_role, :toggle_sidebar_menu, :bulk_update_portal_status, :bulk_destroy, :quarterly_pli, :quarterly_pli_report, :export_quarterly_pli_xlsx, :quarterly_pli_detail, :archived_detail, :save_quarterly_pli, :observer_1, :observer_2, :observer_3, :observer_4, :observer_pli_detail, :save_observer_pli, :kra_targets, :export_kra_targets, :submission_overview, :archived, :export_archived_xlsx, :export_submission_overview_xlsx, :export_l1_xlsx, :export_observer_pli_xlsx ]
 
   def index
     @employee_detail = EmployeeDetail.new
@@ -974,7 +974,6 @@ end
         achievements: :achievement_remark
       ]
     )
-
     @financial_year_options = employee_details.flat_map { |employee|
       employee.user_details.map(&:financial_year)
     }.compact.reject(&:blank?).uniq.sort.reverse
@@ -990,22 +989,51 @@ end
     )
   end
 
+  def quarterly_pli_report
+    unless quarterly_pli_report_authorized?
+      redirect_to root_path, alert: "You are not authorized to access Quarterly PLI Excel Report."
+      return
+    end
+
+    @selected_quarterly_pli_quarter = params[:quarter].presence
+    @selected_financial_year = selected_financial_year || current_financial_year
+    @quarter_options = get_all_quarters.map do |quarter|
+      [ "#{quarter} (#{get_quarter_months(quarter).map { |month| month_label(month) }.join('-')})", quarter ]
+    end
+    employee_details = quarterly_pli_report_employee_scope.includes(
+      quarterly_pli_reviews: :reviewed_by,
+      user_details: [ :activity, :department, achievements: :achievement_remark ]
+    )
+    @financial_year_options = employee_details.flat_map { |employee| employee.user_details.map(&:financial_year) }
+                                              .compact.reject(&:blank?).uniq.sort.reverse
+    @selected_financial_year ||= @financial_year_options.first || current_financial_year
+    @financial_year_options |= [ @selected_financial_year ]
+    @financial_year_options.compact!
+    @financial_year_options.sort!.reverse!
+    @quarterly_pli_rows = build_quarterly_pli_rows(
+      employee_details,
+      financial_year: @selected_financial_year,
+      quarter: @selected_quarterly_pli_quarter
+    )
+  end
+
   def export_quarterly_pli_xlsx
-    unless quarterly_pli_authorized?
-      redirect_to root_path, alert: "You are not authorized to export Quarterly PLI %."
+    unless quarterly_pli_report_authorized?
+      redirect_to root_path, alert: "You are not authorized to export Quarterly PLI Excel Report."
       return
     end
 
     selected_quarter = params[:quarter].presence
     selected_year = selected_financial_year || current_financial_year
-    employee_details = quarterly_pli_employee_scope.includes(
-      quarterly_pli_reviews: :reviewed_by,
+    employee_details = quarterly_pli_report_employee_scope.includes(
+       quarterly_pli_reviews: :reviewed_by,
       user_details: [
         :activity,
         :department,
         achievements: :achievement_remark
       ]
     )
+    employee_details = employee_details.where(id: params[:employee_id]) if params[:employee_id].present?
 
     financial_year_options = employee_details.flat_map { |employee|
       employee.user_details.map(&:financial_year)
@@ -1018,53 +1046,10 @@ end
       quarter: selected_quarter
     )
 
-    package = Axlsx::Package.new
-    workbook = package.workbook
-    styles = workbook.styles
-    header_style = styles.add_style(
-      bg_color: "1F2937",
-      fg_color: "FFFFFF",
-      b: true,
-      alignment: { horizontal: :center, vertical: :center, wrap_text: true },
-      border: { style: :thin, color: "CBD5E1" }
-    )
-    cell_style = styles.add_style(
-      alignment: { vertical: :top, wrap_text: true },
-      border: { style: :thin, color: "E5E7EB" }
-    )
+    package = build_quarterly_pli_detailed_xlsx(rows, selected_year)
 
-    workbook.add_worksheet(name: "Quarterly PLI") do |sheet|
-      sheet.add_row [
-        "Employee Code",
-        "Name",
-        "Department",
-        "Financial Year",
-        "Quarter",
-        "Calculated %",
-        "Final PLI %",
-        "Quarterly PLI Remarks"
-      ], style: header_style
-
-      rows.each do |row|
-        employee = row[:employee]
-        review = row[:review]
-
-        sheet.add_row [
-          employee.employee_code.presence || "-",
-          employee.employee_name.presence || "-",
-          employee.department.presence || "-",
-          row[:financial_year].presence || "-",
-          row[:quarter_label].presence || row[:quarter].presence || "-",
-          quarterly_pli_export_percentage(row[:calculated_percentage]),
-          review&.final_percentage.present? ? "#{format('%.2f', review.final_percentage.to_f)}%" : "-",
-          quarterly_pli_export_review_remarks(review)
-        ], style: cell_style
-      end
-
-      sheet.column_widths 18, 28, 24, 18, 24, 16, 16, 60
-    end
-
-    filename_parts = [ "quarterly_pli", selected_year, selected_quarter.presence ].compact
+    exported_employee_code = params[:employee_id].present? ? rows.first&.dig(:employee)&.employee_code : nil
+    filename_parts = [ "quarterly_pli", exported_employee_code.presence, selected_year, selected_quarter.presence ].compact
     tempfile = Tempfile.new([ filename_parts.join("_"), ".xlsx" ])
     package.serialize(tempfile.path)
     send_file tempfile.path,
@@ -1995,6 +1980,27 @@ end
     ).exists?
   end
 
+  def quarterly_pli_report_authorized?
+    return true if current_user.hod? || current_user.admin?
+    return false unless menu_access_enabled?(:quarterly_pli_report)
+
+    codes = current_user_reviewer_codes
+    codes.any? && EmployeeDetail.where(
+      "LOWER(TRIM(COALESCE(l1_code, ''))) IN (?)",
+      codes
+    ).exists?
+  end
+
+  def quarterly_pli_report_employee_scope
+    scope = EmployeeDetail.order(Arel.sql("LOWER(employee_name) ASC"))
+    return scope if current_user.hod? || current_user.admin?
+
+    codes = current_user_reviewer_codes
+    return scope.none if codes.empty? || !menu_access_enabled?(:quarterly_pli_report)
+
+    scope.where("LOWER(TRIM(COALESCE(l1_code, ''))) IN (?)", codes)
+  end
+
   def quarterly_pli_employee_scope
     scope = EmployeeDetail.order(Arel.sql("LOWER(employee_name) ASC"))
     return scope if current_user.hod? || current_user.admin?
@@ -2319,6 +2325,136 @@ end
     end
 
     timestamps.compact.max
+  end
+
+  def build_quarterly_pli_detailed_xlsx(rows, financial_year)
+    package = Axlsx::Package.new
+    workbook = package.workbook
+    styles = quarterly_pli_detailed_xlsx_styles(workbook)
+
+    rows.group_by { |row| row[:quarter] }.sort.each do |quarter, quarter_rows|
+      months = get_quarter_months(quarter).map { |month| { key: month, label: month_label(month) } }
+      headers = quarterly_pli_employee_headers + quarterly_pli_detail_headers(months, financial_year)
+      workbook.add_worksheet(name: quarter.to_s) do |sheet|
+        sheet.add_row(headers, style: styles[:header], height: 52)
+        quarter_rows.each do |row|
+          employee_values = quarterly_pli_employee_values(row)
+          quarterly_pli_detail_export_rows(row, months).each do |detail_values|
+            sheet.add_row(employee_values + detail_values, style: styles[:cell], height: 36)
+          end
+        end
+        sheet.column_widths(*(quarterly_pli_employee_column_widths + quarterly_pli_detail_column_widths(months)))
+        sheet.auto_filter = "A1:#{Axlsx::col_ref(headers.length - 1)}1"
+        sheet.sheet_view.pane do |pane|
+          pane.top_left_cell = "A2"
+          pane.state = :frozen
+          pane.y_split = 1
+        end
+      end
+    end
+
+    if rows.empty?
+      workbook.add_worksheet(name: "Quarterly PLI") do |sheet|
+        sheet.add_row([ "No records found" ], style: styles[:header])
+      end
+    end
+
+    package
+  end
+
+  def quarterly_pli_employee_headers
+    [ "Employee Code", "Employee Name", "Department", "Financial Year", "Quarter" ]
+  end
+
+  def quarterly_pli_employee_values(row)
+    employee = row[:employee]
+    [
+      employee.employee_code.presence || "-",
+      employee.employee_name.presence || "-",
+      employee.department.presence || "-",
+      row[:financial_year].presence || "-",
+      row[:quarter_label].presence || row[:quarter].presence || "-"
+    ]
+  end
+
+  def quarterly_pli_employee_column_widths
+    [ 18, 28, 24, 18, 24 ]
+  end
+
+  def quarterly_pli_detailed_xlsx_styles(workbook)
+    {
+      header: workbook.styles.add_style(
+        bg_color: "1F2937", fg_color: "FFFFFF", b: true,
+        alignment: { horizontal: :center, vertical: :center, wrap_text: true },
+        border: { style: :thin, color: "94A3B8" }
+      ),
+      cell: workbook.styles.add_style(
+        alignment: { vertical: :top, wrap_text: true },
+        border: { style: :thin, color: "CBD5E1" }
+      )
+    }
+  end
+
+  def quarterly_pli_detail_headers(months, financial_year)
+    headers = [
+      "Key result indicators",
+      "Unit of measurement",
+      view_context.annual_target_fy_label(financial_year)
+    ]
+    months.each do |month|
+      label = month[:label].to_s.upcase.first(3)
+      headers.concat([ "#{label} Target", "#{label} Achievement", "% Progress", "#{label} EMP REMARKS" ])
+      1.upto(4) { |number| headers << "OB#{number} REMARKS" }
+      headers.concat([ "L1%", "L1 REMARKS" ])
+    end
+    headers.concat([ "Quarterly PLI %", "Quarterly PLI REMARKS" ])
+    headers
+  end
+
+  def quarterly_pli_detail_export_rows(row, months)
+    item_groups = {}
+    Array(row.dig(:detail_payload, :months)).each do |month|
+      Array(month[:items]).each do |item|
+        key = [ item[:kri], item[:unit], item[:annual_target] ]
+        item_groups[key] ||= {}
+        item_groups[key][month[:key].to_s] = item
+      end
+    end
+
+    item_groups.map do |(kri, unit, annual_target), monthly_items|
+      ordered_items = months.map { |month| monthly_items[month[:key].to_s] }
+      values = [ kri.presence || "-", unit.presence || "-", annual_target.presence || "-" ]
+      ordered_items.each do |item|
+        values.concat([
+          item&.dig(:target) || "-",
+          item&.dig(:achievement) || "-",
+          quarterly_pli_export_percentage(item&.dig(:progress_value)),
+          quarterly_pli_export_item_value(item, :employee_remarks)
+        ])
+        1.upto(4) do |number|
+          values << quarterly_pli_export_item_value(item, "obs_code#{number}_remarks".to_sym)
+        end
+        values.concat([
+          quarterly_pli_export_percentage(item&.dig(:l1_percentage)),
+          quarterly_pli_export_item_value(item, :l1_remarks)
+        ])
+      end
+      review = row[:review]
+      values.concat([
+        review&.final_percentage.present? ? "#{format('%.2f', review.final_percentage.to_f)}%" : "-",
+        quarterly_pli_export_review_remarks(review)
+      ])
+      values
+    end
+  end
+
+  def quarterly_pli_export_item_value(item, key)
+    item&.dig(key).to_s.strip.presence.then { |value| value == "-" ? nil : value } || "-"
+  end
+
+  def quarterly_pli_detail_column_widths(months)
+    monthly_widths = months.flat_map { [ 15, 17, 14, 34 ] + Array.new(4, 26) + [ 14, 34 ] }
+    [ 42, 18, 22 ] + monthly_widths + [ 18, 42 ]
   end
 
   def quarterly_pli_export_percentage(value)

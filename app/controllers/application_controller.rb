@@ -110,6 +110,12 @@ class ApplicationController < ActionController::Base
     menu_access_enabled?(:quarterly_pli) && l1_assignment_exists?
   end
 
+  def has_quarterly_pli_report_responsibilities?
+    return true if current_user.hod? || current_user.admin?
+
+    menu_access_enabled?(:quarterly_pli_report) && l1_assignment_exists?
+  end
+
   def normalize_financial_year(value)
     year = value.to_s.strip
     return nil if year.blank?
@@ -188,6 +194,7 @@ class ApplicationController < ActionController::Base
   end
 
   helper_method :has_l1_responsibilities?, :has_l2_responsibilities?, :has_quarterly_pli_responsibilities?,
+                :has_quarterly_pli_report_responsibilities?,
                 :l1_pending_reviews_count, :l1_pending_reviews?, :l1_assignment_exists?, :menu_access_enabled?,
                 :employee_menu_access_enabled?
 end

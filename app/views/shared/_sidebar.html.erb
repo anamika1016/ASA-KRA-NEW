@@ -386,6 +386,20 @@
             </li>
           <% end %>
 
+          <% if has_quarterly_pli_report_responsibilities? && employee_sidebar_menu_active?(:quarterly_pli_report) %>
+            <li class="hs-accordion" id="quarterly-pli-report-menu">
+              <%= link_to quarterly_pli_report_employee_details_path,
+                  class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(quarterly_pli_report_employee_details_path)} text-base text-gray-800 rounded-lg" do %>
+                <svg class="shrink-0 size-6 sidebar-nav-icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 3.5h9l3 3V20a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z" />
+                  <path d="M14.5 3.5V7H18" />
+                  <path d="m8 11 2 3-2 3M15 11l-2 3 2 3" />
+                </svg>
+                <span class="font-semibold">Quarterly PLI Excel Report</span>
+              <% end %>
+            </li>
+          <% end %>
+
            <li>
             <%= link_to trainings_path,
                 class: "flex items-center gap-x-3.5 py-2 px-2.5 #{'bg-gray-100' if current_page?(trainings_path)} text-base text-gray-800 rounded-lg" do %>

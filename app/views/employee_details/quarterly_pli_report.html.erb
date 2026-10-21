@@ -1,0 +1,79 @@
+<div class="main-content sidebar-hidden bg-gray-50 min-h-screen">
+  <div class="min-h-screen pl-64 pr-4 pt-4 pb-12 overflow-x-auto bg-gradient-to-br from-gray-50 to-emerald-50/40">
+    <div class="w-full max-w-7xl mx-auto bg-white p-8 rounded-xl shadow-xl border border-gray-200">
+      <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 mb-8 pb-4 border-b-2 border-gray-200">
+        <div>
+          <h2 class="text-3xl font-bold text-gray-800"><i class="fas fa-file-excel text-emerald-700 mr-2"></i>Quarterly PLI Excel Report</h2>
+          <p class="mt-1 text-sm text-gray-500">User-wise detailed Quarterly PLI report download</p>
+        </div>
+        <div class="flex flex-col sm:flex-row gap-3">
+          <input type="search" id="quarterlyPliReportSearch" placeholder="Search employees..." class="w-full sm:w-64 rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">
+          <%= form_with url: quarterly_pli_report_employee_details_path, method: :get, local: true, class: "flex flex-col sm:flex-row gap-3", data: { turbo: false } do %>
+            <%= select_tag :quarter, options_for_select([["All Quarters", ""]] + @quarter_options, @selected_quarterly_pli_quarter), class: "rounded-lg border border-gray-300 px-3 py-2 text-sm", onchange: "this.form.submit()" %>
+            <%= select_tag :financial_year, options_for_select(@financial_year_options, @selected_financial_year), class: "rounded-lg border border-gray-300 px-3 py-2 text-sm", onchange: "this.form.submit()" %>
+          <% end %>
+          <%= link_to export_quarterly_pli_xlsx_employee_details_path(financial_year: @selected_financial_year, quarter: @selected_quarterly_pli_quarter), class: "inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800" do %>
+            <i class="fas fa-download"></i> Export All Users
+          <% end %>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto rounded-lg border border-gray-200">
+        <table id="quarterlyPliReportTable" class="min-w-full text-sm">
+          <thead class="bg-gray-800 text-white">
+            <tr>
+              <th class="px-5 py-4 text-left">Employee Code</th>
+              <th class="px-5 py-4 text-left">Employee Name</th>
+              <th class="px-5 py-4 text-left">Department</th>
+              <th class="px-5 py-4 text-left">Financial Year</th>
+              <th class="px-5 py-4 text-left">Quarter</th>
+              <th class="px-5 py-4 text-center">KRI Count</th>
+              <th class="px-5 py-4 text-center">Export Excel</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200">
+            <% @quarterly_pli_rows.each_with_index do |row, index| %>
+              <% employee = row[:employee] %>
+              <tr class="quarterly-pli-report-row <%= index.even? ? 'bg-white' : 'bg-gray-50' %> hover:bg-emerald-50">
+                <td class="px-5 py-4"><%= employee.employee_code.presence || "-" %></td>
+                <td class="px-5 py-4 font-semibold text-gray-900"><%= employee.employee_name.presence || "-" %></td>
+                <td class="px-5 py-4"><%= employee.department.presence || "-" %></td>
+                <td class="px-5 py-4"><%= row[:financial_year] %></td>
+                <td class="px-5 py-4 font-semibold text-teal-700"><%= row[:quarter_label] %></td>
+                <td class="px-5 py-4 text-center"><%= Array(row.dig(:detail_payload, :months)).flat_map { |month| Array(month[:items]) }.map { |item| [item[:kri], item[:unit], item[:annual_target]] }.uniq.size %></td>
+                <td class="px-5 py-4 text-center">
+                  <%= link_to export_quarterly_pli_xlsx_employee_details_path(financial_year: row[:financial_year], quarter: row[:quarter], employee_id: employee.id), class: "inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800", title: "Export #{employee.employee_name}" do %>
+                    <i class="fas fa-file-excel"></i> Download
+                  <% end %>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+        <% if @quarterly_pli_rows.empty? %>
+          <div class="py-14 text-center text-gray-500">No completed Quarterly PLI records found.</div>
+        <% end %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .min-h-screen { padding-left: 16rem; }
+  .sidebar-hidden .min-h-screen { padding-left: 1rem !important; padding-right: 1rem !important; }
+  .sidebar-hidden .max-w-7xl { max-width: 100% !important; width: 100% !important; }
+</style>
+
+<script>
+  document.addEventListener("turbo:load", function () {
+    const search = document.getElementById("quarterlyPliReportSearch");
+    if (!search || search.dataset.bound === "true") return;
+    search.dataset.bound = "true";
+    search.addEventListener("input", function () {
+      const query = search.value.toLowerCase().trim();
+      document.querySelectorAll(".quarterly-pli-report-row").forEach(function (row) {
+        row.style.display = row.textContent.toLowerCase().includes(query) ? "" : "none";
+      });
+    });
+  });
+</script>

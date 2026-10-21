@@ -8,6 +8,7 @@ class EmployeeSidebarAccess < ApplicationRecord
     "observer_4" => "observer_4_active",
     "l1" => "l1_active",
     "quarterly_pli" => "quarterly_pli_active",
+    "quarterly_pli_report" => "quarterly_pli_report_active",
     "archived" => "archived_active"
   }.freeze
 

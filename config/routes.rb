@@ -109,6 +109,7 @@ Rails.application.routes.draw do
       get "l1"
       get "l2"  # ➤ this is your sidebar L1 view
       get :quarterly_pli
+      get :quarterly_pli_report
       get :export_quarterly_pli_xlsx
       post :save_quarterly_pli
       get :observer_1

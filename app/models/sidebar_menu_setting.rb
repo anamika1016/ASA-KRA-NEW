@@ -1,5 +1,5 @@
 class SidebarMenuSetting < ApplicationRecord
-  MENU_KEYS = %w[observer_1 observer_2 observer_3 observer_4 l1 quarterly_pli].freeze
+  MENU_KEYS = %w[observer_1 observer_2 observer_3 observer_4 l1 quarterly_pli quarterly_pli_report].freeze
 
   validates :menu_key, presence: true, inclusion: { in: MENU_KEYS }, uniqueness: true
 
