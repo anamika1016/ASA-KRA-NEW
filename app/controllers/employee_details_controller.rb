@@ -2096,9 +2096,9 @@ end
     rows.sort_by do |row|
       [
         row[:observer_review]&.status == "approved" ? 1 : 0,
-        row[:employee].employee_name.to_s.downcase,
         row[:quarter],
-        review_month_sort_index(row[:month])
+        review_month_sort_index(row[:month]),
+        row[:employee].employee_name.to_s.downcase
       ]
     end
   end
@@ -2285,8 +2285,8 @@ end
     end.sort_by do |row|
       [
         row[:review].present? ? 1 : 0,
-        row[:employee].employee_name.to_s.downcase,
-        row[:quarter]
+        row[:quarter],
+        row[:employee].employee_name.to_s.downcase
       ]
     end
   end
@@ -3785,9 +3785,9 @@ end
 
       [
         review_pending_rank,
-        data[:employee]&.employee_name.to_s.downcase,
         data[:financial_year].to_s,
-        review_month_sort_index(data[:month])
+        review_month_sort_index(data[:month]),
+        data[:employee]&.employee_name.to_s.downcase
       ]
     end.to_h
   end
