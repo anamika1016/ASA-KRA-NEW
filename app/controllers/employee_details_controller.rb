@@ -2098,7 +2098,7 @@ end
         row[:observer_review]&.status == "approved" ? 1 : 0,
         row[:employee].employee_name.to_s.downcase,
         row[:quarter],
-        row[:month]
+        review_month_sort_index(row[:month])
       ]
     end
   end
@@ -2891,6 +2891,12 @@ end
 
   def review_months
     %w[april may june july august september october november december january february march]
+  end
+
+  # Financial-year position of a month (april => 0 ... march => 11) so review rows
+  # list as Q1, Q2, Q3, Q4 instead of alphabetically by month name.
+  def review_month_sort_index(month)
+    review_months.index(month.to_s.downcase.strip) || review_months.size
   end
 
   def normalize_month_param(month)
@@ -3780,8 +3786,8 @@ end
       [
         review_pending_rank,
         data[:employee]&.employee_name.to_s.downcase,
-        data[:month].to_s,
-        data[:financial_year].to_s
+        data[:financial_year].to_s,
+        review_month_sort_index(data[:month])
       ]
     end.to_h
   end
