@@ -3250,7 +3250,7 @@ end
     if quarterly_review&.status == "approved"
       reviewer = quarterly_review.reviewed_by
       reviewer_employee = if reviewer&.employee_code.present?
-        EmployeeDetail.find_by("LOWER(TRIM(employee_code)) = ?", reviewer.employee_code.to_s.strip.downcase)
+        EmployeeDetail.cached_find_by_normalized_code(reviewer.employee_code.to_s.strip.downcase)
       end
       return [ {
         role: "Completed",

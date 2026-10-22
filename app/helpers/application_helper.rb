@@ -269,19 +269,7 @@ module ApplicationHelper
     scope = observer_pending_count_scope(observer_level)
     return false if scope.nil?
 
-    financial_year = sidebar_current_financial_year
-
-    observer_pending_candidates(scope, observer_level, financial_year).find_each(batch_size: 25) do |achievement|
-      next if achievement.achievement.blank?
-
-      employee = achievement.user_detail&.employee_detail
-      next unless observer_assigned?(employee, observer_level)
-      next if quarter_name_for_month(achievement.month.to_s.downcase).blank?
-
-      return true
-    end
-
-    false
+    observer_pending_candidates(scope, observer_level, sidebar_current_financial_year).exists?
   rescue StandardError
     false
   end
@@ -294,8 +282,13 @@ module ApplicationHelper
       .joins(user_detail: :employee_detail)
       .merge(employee_scope.unscope(:order))
       .where(user_details: { financial_year: financial_year })
-      .where.not(achievements: { achievement: [ nil, "" ] })
+      .where("achievements.achievement IS NOT NULL AND achievements.achievement !~ '^[[:space:]]*$'")
       .where("LOWER(achievements.month) IN (?)", MONTH_SHORT_LABELS.keys)
+      .where(
+        "BTRIM(LOWER(COALESCE(employee_details.#{observer_level}, ''))) <> ''
+         AND BTRIM(LOWER(COALESCE(employee_details.#{observer_level}, ''))) NOT IN (:unassigned)",
+        unassigned: EmployeeDetail::UNASSIGNED_CODE_VALUES
+      )
       .where(
         "NOT EXISTS (
            SELECT 1 FROM observer_pli_reviews opr
@@ -308,7 +301,6 @@ module ApplicationHelper
         financial_year: financial_year,
         observer_level: observer_level
       )
-      .includes(user_detail: :employee_detail)
   end
 
   def quarterly_pli_pending_reviews?

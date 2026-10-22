@@ -80,6 +80,15 @@ scope :l1_pending_records, -> { where(status: [ "pending", "returned" ]) }
     self.class.assigned_code?(public_send(observer_level))
   end
 
+  # Reviewer codes repeat across every row of a listing, so resolve each one
+  # once per request instead of per row.
+  def self.cached_find_by_normalized_code(code)
+    cache = (Current.employees_by_normalized_code ||= {})
+    return cache[code] if cache.key?(code)
+
+    cache[code] = find_by("LOWER(TRIM(employee_code)) = ?", code)
+  end
+
   def self.assigned_code?(value)
     normalized = value.to_s.strip.downcase
     normalized.present? && !UNASSIGNED_CODE_VALUES.include?(normalized)
