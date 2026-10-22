@@ -2096,8 +2096,7 @@ end
     rows.sort_by do |row|
       [
         row[:observer_review]&.status == "approved" ? 1 : 0,
-        row[:quarter],
-        review_month_sort_index(row[:month]),
+        -review_month_sort_index(row[:month]),
         row[:employee].employee_name.to_s.downcase
       ]
     end
@@ -2285,7 +2284,7 @@ end
     end.sort_by do |row|
       [
         row[:review].present? ? 1 : 0,
-        row[:quarter],
+        -get_all_quarters.index(row[:quarter].to_s).to_i,
         row[:employee].employee_name.to_s.downcase
       ]
     end
@@ -2893,8 +2892,9 @@ end
     %w[april may june july august september october november december january february march]
   end
 
-  # Financial-year position of a month (april => 0 ... march => 11) so review rows
-  # list as Q1, Q2, Q3, Q4 instead of alphabetically by month name.
+  # Financial-year position of a month (april => 0 ... march => 11). Review listings
+  # sort on the negated value so the latest month sits on top and older months follow
+  # in sequence, instead of ordering alphabetically by month name.
   def review_month_sort_index(month)
     review_months.index(month.to_s.downcase.strip) || review_months.size
   end
@@ -3786,7 +3786,7 @@ end
       [
         review_pending_rank,
         data[:financial_year].to_s,
-        review_month_sort_index(data[:month]),
+        -review_month_sort_index(data[:month]),
         data[:employee]&.employee_name.to_s.downcase
       ]
     end.to_h
