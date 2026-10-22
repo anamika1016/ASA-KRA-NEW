@@ -44,8 +44,13 @@ class KraMailFlowTest < ActionDispatch::IntegrationTest
 
     assert result[:success], result.inspect
     assert_equal [ "9876500001" ], @sms.map(&:first)
-    assert_equal [ [ "kra_submitted_to_l1", "ramesh.kra@example.com" ] ], queued_mails
+    assert_equal [ [ "kra_submitted_to_l1", "ramesh.kra@example.com" ], [ "employee_submitted", "asha.kra@example.com" ] ], queued_mails
     assert SmsLog.exists?(employee_detail_id: @employee.id, recipient_role: "l1", sent: true)
+
+    employee_mail = queued_params.last
+    assert_equal "Your KRA MIS April submitted", employee_mail["subject"]
+    assert_equal "Your KRA MIS for April has been submitted successfully and sent to L1 - Ramesh Kumar for review.", employee_mail["message"]
+    assert_equal "Asha Devi", employee_mail["to_name"]
   end
 
   test "submission with observers: every observer gets SMS and mail, L1 nothing" do
@@ -55,8 +60,9 @@ class KraMailFlowTest < ActionDispatch::IntegrationTest
 
     assert result[:success], result.inspect
     assert_equal [ "9876500002" ], @sms.map(&:first)
-    assert_equal [ [ "kra_submitted_to_observer", "sunita.kra@example.com" ] ], queued_mails
+    assert_equal [ [ "kra_submitted_to_observer", "sunita.kra@example.com" ], [ "employee_submitted", "asha.kra@example.com" ] ], queued_mails
     assert_equal "OB1", queued_params.first["reviewer_role"]
+    assert_equal "Your KRA MIS for April has been submitted successfully and sent to OB1 - Sunita Sharma for review.", queued_params.last["message"]
     assert_not SmsLog.exists?(employee_detail_id: @employee.id, recipient_role: "l1")
   end
 
@@ -67,11 +73,11 @@ class KraMailFlowTest < ActionDispatch::IntegrationTest
     assert result[:success], result.inspect
     assert result.dig(:l1_result, :mail_only)
     assert_empty @sms
-    assert_equal [ [ "kra_submitted_to_l1", "ramesh.kra@example.com" ] ], queued_mails
+    assert_equal [ [ "kra_submitted_to_l1", "ramesh.kra@example.com" ], [ "employee_submitted", "asha.kra@example.com" ] ], queued_mails
 
     clear_enqueued_jobs
     with_sms { notify_after_submission(@employee) }
-    assert_equal [ [ "kra_updated_to_l1", "ramesh.kra@example.com" ] ], queued_mails
+    assert_equal [ [ "kra_updated_to_l1", "ramesh.kra@example.com" ], [ "employee_submitted", "asha.kra@example.com" ] ], queued_mails
   end
 
   test "with the relay off nothing changes: no mail, missing mobile still fails" do
@@ -95,16 +101,16 @@ class KraMailFlowTest < ActionDispatch::IntegrationTest
     with_sms { submit_month(detail, "8") }
     assert_redirected_or_ok
     assert_equal [ "9876500001" ], @sms.map(&:first)
-    assert_equal [ [ "kra_submitted_to_l1", "ramesh.kra@example.com" ] ], queued_mails
+    assert_equal [ [ "kra_submitted_to_l1", "ramesh.kra@example.com" ], [ "employee_submitted", "asha.kra@example.com" ] ], queued_mails
 
     clear_enqueued_jobs
     @sms.clear
     with_sms { submit_month(detail, "9") }
     assert_redirected_or_ok
     assert_empty @sms, "SMS goes only once per month"
-    assert_equal [ [ "kra_updated_to_l1", "ramesh.kra@example.com" ] ], queued_mails
+    assert_equal [ [ "kra_updated_to_l1", "ramesh.kra@example.com" ], [ "employee_submitted", "asha.kra@example.com" ] ], queued_mails
     mail = queued_params.first
-    assert_equal "KRA MIS updated - Asha Devi (April (Q1 (APR-JUN)))", mail["subject"]
+    assert_equal "KRA MIS updated - Asha Devi (April)", mail["subject"]
     assert_equal "April", mail["month"]
   end
 
@@ -114,13 +120,13 @@ class KraMailFlowTest < ActionDispatch::IntegrationTest
     sign_in employee_user
 
     with_sms { submit_month(detail, "8") }
-    assert_equal [ [ "kra_submitted_to_observer", "sunita.kra@example.com" ] ], queued_mails
+    assert_equal [ [ "kra_submitted_to_observer", "sunita.kra@example.com" ], [ "employee_submitted", "asha.kra@example.com" ] ], queued_mails
 
     clear_enqueued_jobs
     @sms.clear
     with_sms { submit_month(detail, "9") }
     assert_empty @sms
-    assert_equal [ [ "kra_updated_to_observer", "sunita.kra@example.com" ] ], queued_mails
+    assert_equal [ [ "kra_updated_to_observer", "sunita.kra@example.com" ], [ "employee_submitted", "asha.kra@example.com" ] ], queued_mails
   end
 
   test "observers approve again after an edit: L1 gets the mail without a second SMS" do
@@ -155,6 +161,10 @@ class KraMailFlowTest < ActionDispatch::IntegrationTest
     assert_includes queued_mails, [ "employee_observer_approved", "asha.kra@example.com" ]
     assert_includes queued_mails, [ "kra_observers_approved_to_l1", "ramesh.kra@example.com" ]
     assert_equal [ "9876500001" ], @sms.map(&:first)
+    l1_mail = queued_params.find { |p| p["mail_type"] == "kra_observers_approved_to_l1" }
+    assert_equal "Ramesh Kumar", l1_mail["to_name"]
+    assert_equal "KRA MIS ready for L1 review - Asha Devi (April)", l1_mail["subject"]
+    assert_equal "All observers have approved the KRA MIS of Asha Devi for April. It is now waiting for your L1 review.", l1_mail["message"]
 
     employee_mail = queued_params.find { |p| p["mail_type"] == "employee_observer_approved" }
     assert_equal "OB1", employee_mail["reviewer_role"]

@@ -2111,6 +2111,7 @@ class UserDetailsController < ApplicationController
     # approved (EmployeeDetailsController#notify_l1_after_observer_chain_approval).
     observer_result = observer_levels.any? ? send_sms_to_observers(employee_detail, quarter, month, observer_levels) : nil
     l1_result = observer_levels.any? ? nil : send_l1_submission_sms_once(employee_detail, quarter, month, user_detail)
+    mail_employee_submission(employee_detail, quarter, month, observer_levels)
 
     notification_results = [ observer_result, l1_result ].compact
     successful_results = notification_results.select { |result| result[:success] }
@@ -2139,6 +2140,26 @@ class UserDetailsController < ApplicationController
         l1_result: l1_result
       }
     end
+  end
+
+  # The employee gets a mail for every month they submit, naming who reviews it
+  # next. A mail problem never affects the submission.
+  def mail_employee_submission(employee_detail, quarter, month, observer_levels)
+    return unless KraMailRelay.enabled?
+
+    reviewers = if observer_levels.any?
+      observer_levels.map { |level| [ observer_label(level), employee_detail_for_code(employee_detail.public_send(level)) ] }
+    else
+      [ [ "L1", employee_detail_for_code(employee_detail.l1_code) ] ]
+    end
+
+    KraMailRelay.notify_employee_submission(
+      employee_detail: employee_detail, quarter: quarter, month: month,
+      reviewer_role: reviewers.map(&:first).join(", "),
+      reviewer_name: reviewers.filter_map { |_, reviewer| reviewer&.employee_name.presence }.join(", ")
+    )
+  rescue StandardError => e
+    Rails.logger.error("Employee submission mail failed employee_detail_id=#{employee_detail&.id}: #{e.class} #{e.message}")
   end
 
   def send_l1_submission_sms_once(employee_detail, quarter, month, user_detail)

@@ -50,7 +50,7 @@ class KraMailRelayTest < ActiveSupport::TestCase
 
     with_env("KRA_MAIL_RELAY_URL" => "https://krai.asaindia.org/", "KRA_MAIL_APP_URL" => "https://asakra.asaindia.org") do
       params = KraMailRelay.params_for("kra_submitted_to_observer", recipient: @l1, employee_detail: @employee,
-                                                                     quarter: "Q1 (APR-JUN)", message: "Hello", reviewer_role: "OB2")
+                                                                     quarter: "Q1 (APR-JUN)", message: "Hello", month: "july", reviewer_role: "OB2")
       KraMailRelay.stub(:get, fake) { assert KraMailRelay.deliver!("kra_submitted_to_observer", params) }
     end
 
@@ -59,8 +59,9 @@ class KraMailRelayTest < ActiveSupport::TestCase
     assert_equal KraMailRelay::FIELDS, query.keys
     assert_equal "l1.manager@example.com", query["to_email"]
     assert_equal "L1 Manager", query["to_name"]
-    assert_equal "KRA MIS submitted for observer review - Asha Devi (Q1 (APR-JUN))", query["subject"]
-    assert_equal "Hello", query["message"]
+    assert_equal "KRA MIS submitted for observer review - Asha Devi (July)", query["subject"]
+    assert_equal "Asha Devi has submitted the KRA MIS for July. Please review and approve in the system.", query["message"]
+    assert_equal "July", query["month"]
     assert_equal "https://asakra.asaindia.org/employee_details/observer_2", query["link"]
     assert_equal "E-101", query["employee_code"]
     assert_equal "OB2", query["reviewer_role"]
@@ -142,8 +143,8 @@ class KraMailRelayTest < ActiveSupport::TestCase
     query = URI.decode_www_form(called.query).to_h
     assert_equal KraMailRelay::FIELDS, query.keys
     assert_equal "asha@example.com", query["to_email"]
-    assert_equal "Your KRA MIS April (Q1 (APR-JUN)) returned by L1 L1 Manager", query["subject"]
-    assert_equal "Dear Asha Devi, your KRA MIS for April (Q1 (APR-JUN)) has been returned by L1 L1 Manager. Please check and resubmit. Remarks: Add proof", query["message"]
+    assert_equal "Your KRA MIS April returned by L1 L1 Manager", query["subject"]
+    assert_equal "Your KRA MIS for April has been returned by L1 L1 Manager. Please check and resubmit. Remarks: Add proof", query["message"]
     assert_equal "https://asakra.asaindia.org/user_details/get_user_detail", query["link"]
     assert_equal "April", query["month"]
     assert_equal "rejected", query["action"]

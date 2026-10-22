@@ -36,6 +36,7 @@ class KraMailRelay
     "kra_observers_approved_to_l1" => "asakra_observers_approved_to_l1.aspx",
     "kra_updated_to_l1" => "asakra_updated_to_l1.aspx",
     "kra_updated_to_observer" => "asakra_updated_to_observer.aspx",
+    "employee_submitted" => "asakra_employee_submitted.aspx",
     "employee_observer_approved" => "asakra_employee_observer_approved.aspx",
     "employee_observer_returned" => "asakra_employee_observer_returned.aspx",
     "employee_l1_approved" => "asakra_employee_l1_approved.aspx",
@@ -48,11 +49,12 @@ class KraMailRelay
   DEFAULT_PAGE = "asakra_notification.aspx".freeze
 
   SUBJECTS = {
-    "kra_submitted_to_l1" => "KRA MIS submitted - %{employee_name} (%{quarter})",
-    "kra_submitted_to_observer" => "KRA MIS submitted for observer review - %{employee_name} (%{quarter})",
-    "kra_observers_approved_to_l1" => "KRA MIS ready for L1 review - %{employee_name} (%{quarter})",
+    "kra_submitted_to_l1" => "KRA MIS submitted - %{employee_name} (%{period})",
+    "kra_submitted_to_observer" => "KRA MIS submitted for observer review - %{employee_name} (%{period})",
+    "kra_observers_approved_to_l1" => "KRA MIS ready for L1 review - %{employee_name} (%{period})",
     "kra_updated_to_l1" => "KRA MIS updated - %{employee_name} (%{period})",
     "kra_updated_to_observer" => "KRA MIS updated for observer review - %{employee_name} (%{period})",
+    "employee_submitted" => "Your KRA MIS %{period} submitted",
     "employee_observer_approved" => "Your KRA MIS %{period} approved by %{reviewer_role} %{reviewer_name}",
     "employee_observer_returned" => "Your KRA MIS %{period} returned by %{reviewer_role} %{reviewer_name}",
     "employee_l1_approved" => "Your KRA MIS %{period} approved by L1 %{reviewer_name}",
@@ -61,6 +63,16 @@ class KraMailRelay
     "employee_l2_returned" => "Your KRA MIS %{period} returned by L2 %{reviewer_name}",
     "employee_pli_approved" => "Your Quarterly PLI %{period} approved by %{reviewer_name}",
     "employee_pli_returned" => "Your Quarterly PLI %{period} returned by %{reviewer_name}"
+  }.freeze
+
+  # Mails to reviewers name the month; the SMS text they used to carry only
+  # says which quarter.
+  REVIEWER_MESSAGES = {
+    "kra_submitted_to_l1" => "%{employee_name} has submitted the KRA MIS for %{period}. Please review and approve in the system.",
+    "kra_submitted_to_observer" => "%{employee_name} has submitted the KRA MIS for %{period}. Please review and approve in the system.",
+    "kra_observers_approved_to_l1" => "All observers have approved the KRA MIS of %{employee_name} for %{period}. It is now waiting for your L1 review.",
+    "kra_updated_to_l1" => "%{employee_name} has updated the KRA MIS for %{period}. Please review and approve in the system.",
+    "kra_updated_to_observer" => "%{employee_name} has updated the KRA MIS for %{period}. Please review and approve in the system."
   }.freeze
 
   KRAI_SENT = /email sent successfully/i
@@ -104,10 +116,17 @@ class KraMailRelay
   # The employee edited and submitted a month again. The SMS goes only once per
   # month, but the reviewer gets a mail every time.
   def self.notify_update(kind, recipient:, employee_detail:, quarter:, month: nil, reviewer_role: nil)
-    message = "#{employee_detail.employee_name} has updated the KRA MIS for #{period_for(quarter, month)}. " \
-              "Please review and approve in the system. Action For Social Advancement (ASA)"
-    notify(kind, recipient: recipient, employee_detail: employee_detail, quarter: quarter, message: message,
+    notify(kind, recipient: recipient, employee_detail: employee_detail, quarter: quarter, message: "",
                  month: month, reviewer_role: reviewer_role)
+  end
+
+  # Confirms to the employee that a month was submitted (also after an edit)
+  # and who will review it. reviewer_role/reviewer_name list those reviewers.
+  def self.notify_employee_submission(employee_detail:, quarter:, month:, reviewer_role:, reviewer_name:)
+    sent_to = [ reviewer_role, reviewer_name.presence ].compact.join(" - ")
+    message = "Your KRA MIS for #{period_for(quarter, month)} has been submitted successfully and sent to #{sent_to} for review."
+    notify("employee_submitted", recipient: employee_detail, employee_detail: employee_detail, quarter: quarter, message: message,
+                                 month: month, reviewer_role: reviewer_role, reviewer_name: reviewer_name)
   end
 
   # Tells the employee who approved or returned their KRA MIS. kind is
@@ -117,7 +136,8 @@ class KraMailRelay
     action = kind.to_s.end_with?("_returned") ? "returned" : "approved"
     what = kind.to_s.start_with?("employee_pli_") ? "Quarterly PLI" : "KRA MIS"
     by = [ reviewer_role == "PLI" ? nil : reviewer_role, reviewer_name.presence ].compact.join(" ")
-    message = "Dear #{employee_detail.employee_name}, your #{what} for #{period_for(quarter, month)} has been #{action} by #{by}."
+    # krai's page writes the "Dear <name>," greeting itself.
+    message = "Your #{what} for #{period_for(quarter, month)} has been #{action} by #{by}."
     message += " Please check and resubmit." if action == "returned"
     message += " Remarks: #{remarks}" if remarks.present?
 
@@ -133,7 +153,7 @@ class KraMailRelay
       "to_email" => recipient.employee_email.to_s.strip,
       "to_name" => recipient.employee_name.presence || recipient.employee_email.to_s,
       "subject" => Kernel.format(SUBJECTS.fetch(kind.to_s, "KRA MIS notification - %{employee_name}"), values).squish,
-      "message" => message.to_s,
+      "message" => REVIEWER_MESSAGES.key?(kind.to_s) ? Kernel.format(REVIEWER_MESSAGES[kind.to_s], values) : message.to_s,
       "link" => link_for(kind, reviewer_role),
       "employee_name" => employee_detail.employee_name.to_s,
       "employee_code" => employee_detail.employee_code.to_s,
@@ -156,11 +176,11 @@ class KraMailRelay
     "pending"
   end
 
-  # "April (Q1 (APR-JUN))", or just the quarter when the action covers all of it.
+  # The month ("July"); the quarter only when the action covers all of it.
   def self.period_for(quarter, month)
     return quarter.presence || "all quarters" if month.blank?
 
-    quarter.present? ? "#{month.to_s.titleize} (#{quarter})" : month.to_s.titleize
+    month.to_s.titleize
   end
 
   # The review page the recipient opens in the KRA portal.
