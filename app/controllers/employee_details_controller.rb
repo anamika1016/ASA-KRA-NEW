@@ -2070,6 +2070,10 @@ end
 
     rows = []
     employee_details.each do |employee|
+      financial_year_details = employee.user_details.select do |detail|
+        detail.financial_year.to_s == financial_year.to_s && detail.activity.present?
+      end
+
       quarters.each do |quarter_name|
         (months_by_quarter[quarter_name] || []).each do |month_name|
           next unless observer_level_available_for_month?(employee, financial_year, quarter_name, month_name, observer_level)
@@ -2082,6 +2086,7 @@ end
             financial_year: financial_year,
             quarter: quarter_name,
             month: month_name,
+            submitted: submitted_target_achievements_for_pli_month(financial_year_details, month_name).any?,
             month_label: month_label(month_name),
             quarter_label: "#{quarter_name} (#{payload[:months].map { |payload_month| payload_month[:label] }.join('-')})",
             observer_name: observer_names_by_code[employee.public_send(observer_level).to_s.strip.downcase].presence || "-",
@@ -2096,6 +2101,7 @@ end
     rows.sort_by do |row|
       [
         row[:observer_review]&.status == "approved" ? 1 : 0,
+        row[:submitted] ? 0 : 1,
         -review_month_sort_index(row[:month]),
         row[:employee].employee_name.to_s.downcase
       ]
@@ -3082,9 +3088,9 @@ end
 
       [
         status_rank,
-        data[:employee]&.employee_name.to_s.downcase,
-        data[:month].to_s,
-        data[:financial_year].to_s
+        data[:financial_year].to_s,
+        -review_month_sort_index(data[:month]),
+        data[:employee]&.employee_name.to_s.downcase
       ]
     end.to_h
   end
@@ -3977,7 +3983,7 @@ end
       end
     end
 
-    activities.sort_by { |a| [ a[:month], a[:activity_name] ] }
+    activities.sort_by { |a| [ review_month_sort_index(a[:month]), a[:activity_name].to_s ] }
   end
 
   # Helper method to check if an activity can be approved
@@ -4064,7 +4070,7 @@ end
       end
     end
 
-    approvable_activities.sort_by { |a| [ a[:month], a[:activity_name] ] }
+    approvable_activities.sort_by { |a| [ review_month_sort_index(a[:month]), a[:activity_name].to_s ] }
   end
 
   # Get target value for a specific month
