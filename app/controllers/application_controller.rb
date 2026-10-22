@@ -27,12 +27,19 @@ class ApplicationController < ActionController::Base
     redirect_to new_user_session_path, alert: "Your account is inactive. Please contact HOD."
   end
 
+  # Looked up repeatedly while rendering a single page (menu access checks, L1
+  # scope, observer identity), so resolve it at most once per request per user.
   def portal_employee_detail_for(user)
-    code = user.employee_code.to_s.strip.downcase
-    code_match = EmployeeDetail.find_by("lower(TRIM(employee_code)) = ?", code) if code.present?
-    code_match ||
-      user.employee_detail ||
-      EmployeeDetail.find_by("lower(TRIM(employee_email)) = ?", user.email.to_s.strip.downcase)
+    cache = (@portal_employee_detail_cache ||= {})
+    return cache[user.id] if cache.key?(user.id)
+
+    cache[user.id] = begin
+      code = user.employee_code.to_s.strip.downcase
+      code_match = EmployeeDetail.find_by("lower(TRIM(employee_code)) = ?", code) if code.present?
+      code_match ||
+        user.employee_detail ||
+        EmployeeDetail.find_by("lower(TRIM(employee_email)) = ?", user.email.to_s.strip.downcase)
+    end
   end
 
   def menu_access_enabled?(menu_key, user = current_user)
@@ -147,6 +154,7 @@ class ApplicationController < ActionController::Base
       .where(status: [ nil, "pending", "submitted" ])
       .includes(user_detail: :employee_detail)
       .to_a
+      .tap { |achievements| prime_observer_reviews_for(achievements) }
       .count { |achievement| l1_actionable_achievement?(achievement) }
   rescue StandardError
     0
@@ -154,6 +162,17 @@ class ApplicationController < ActionController::Base
 
   def l1_pending_reviews?
     l1_pending_reviews_count.positive?
+  end
+
+  # One bulk load of the observer reviews these achievements will be checked
+  # against, so the per-achievement chain check stays in memory.
+  def prime_observer_reviews_for(achievements)
+    achievements.group_by { |achievement| achievement.user_detail&.financial_year }.each do |financial_year, group|
+      next if financial_year.blank?
+
+      ids = group.filter_map { |achievement| achievement.user_detail&.employee_detail&.id }
+      ObserverPliReview.prime_cache(ids, financial_year)
+    end
   end
 
   def l1_actionable_achievement?(achievement)
@@ -173,13 +192,12 @@ class ApplicationController < ActionController::Base
     return false if quarter.blank? || financial_year.blank?
 
     assigned_levels.all? do |observer_level|
-      ObserverPliReview.exists?(
-        employee_detail: employee_detail,
-        financial_year: financial_year,
-        quarter: quarter,
-        month: month.to_s.downcase,
-        observer_level: observer_level,
-        status: "approved"
+      ObserverPliReview.cached_approved?(
+        employee_detail.id,
+        financial_year,
+        quarter,
+        month.to_s.downcase,
+        observer_level
       )
     end
   end

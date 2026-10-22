@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_10_21_000100) do
+ActiveRecord::Schema[8.0].define(version: 2026_10_22_000100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -144,10 +144,19 @@ ActiveRecord::Schema[8.0].define(version: 2026_10_21_000100) do
     t.boolean "observer_menu_4_active", default: true, null: false
     t.boolean "l1_menu_active", default: true, null: false
     t.boolean "quarterly_pli_menu_active", default: true, null: false
+    t.index "lower((employee_code)::text)", name: "index_employee_details_on_lower_employee_code"
+    t.index "lower((employee_email)::text)", name: "index_employee_details_on_lower_employee_email"
+    t.index "lower((employee_name)::text)", name: "index_employee_details_on_lower_employee_name"
     t.index "lower(TRIM(BOTH FROM COALESCE(l1_code, ''::character varying)))", name: "index_employee_details_on_normalized_l1_code"
     t.index "lower(TRIM(BOTH FROM COALESCE(l1_employer_name, ''::character varying)))", name: "index_employee_details_on_normalized_l1_name"
     t.index "lower(TRIM(BOTH FROM COALESCE(l2_code, ''::character varying)))", name: "index_employee_details_on_normalized_l2_code"
     t.index "lower(TRIM(BOTH FROM COALESCE(l2_employer_name, ''::character varying)))", name: "index_employee_details_on_normalized_l2_name"
+    t.index "lower(TRIM(BOTH FROM COALESCE(obs_code1, ''::character varying)))", name: "index_employee_details_on_normalized_obs_code1"
+    t.index "lower(TRIM(BOTH FROM COALESCE(obs_code2, ''::character varying)))", name: "index_employee_details_on_normalized_obs_code2"
+    t.index "lower(TRIM(BOTH FROM COALESCE(obs_code3, ''::character varying)))", name: "index_employee_details_on_normalized_obs_code3"
+    t.index "lower(TRIM(BOTH FROM COALESCE(obs_code4, ''::character varying)))", name: "index_employee_details_on_normalized_obs_code4"
+    t.index "lower(TRIM(BOTH FROM employee_code))", name: "index_employee_details_on_lower_trim_employee_code"
+    t.index "lower(TRIM(BOTH FROM employee_email))", name: "index_employee_details_on_lower_trim_employee_email"
     t.index ["employee_code"], name: "index_employee_details_on_employee_code"
     t.index ["employee_email"], name: "index_employee_details_on_employee_email"
     t.index ["employee_name", "department"], name: "index_employee_details_on_employee_name_and_department"

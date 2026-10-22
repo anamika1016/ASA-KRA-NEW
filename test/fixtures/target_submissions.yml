@@ -1,9 +1,9 @@
 # Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
 
 one:
-  user_detail_id: 1
-  user_id: 1
-  employee_detail_id: 1
+  user_detail: one
+  user: one
+  employee_detail: one
   month: MyString
   target: MyString
   status: MyString
@@ -11,9 +11,9 @@ one:
   updated_at: <%= Time.current %>
 
 two:
-  user_detail_id: 2
-  user_id: 2
-  employee_detail_id: 2
+  user_detail: two
+  user: two
+  employee_detail: two
   month: MyString
   target: MyString
   status: MyString

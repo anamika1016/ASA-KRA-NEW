@@ -139,7 +139,10 @@ module ApplicationHelper
   def portal_employee_detail_for(user = current_user)
     return if user.blank?
 
-    user.employee_detail ||
+    cache = (@portal_employee_detail_cache ||= {})
+    return cache[user.id] if cache.key?(user.id)
+
+    cache[user.id] = user.employee_detail ||
       EmployeeDetail.find_by("LOWER(employee_email) = ?", user.email.to_s.downcase) ||
       EmployeeDetail.find_by("LOWER(employee_code) = ?", user.employee_code.to_s.downcase)
   end
@@ -261,6 +264,7 @@ module ApplicationHelper
     return 0 if employees.empty?
 
     employee_ids = employees.map(&:id)
+    ObserverPliReview.prime_cache(employee_ids, sidebar_current_financial_year)
     approved_keys = QuarterlyPliReview
       .where(employee_detail_id: employee_ids, financial_year: sidebar_current_financial_year, status: "approved")
       .pluck(:employee_detail_id, :financial_year, :quarter)
@@ -371,13 +375,12 @@ module ApplicationHelper
     return true if assigned_levels.empty?
 
     assigned_levels.all? do |observer_level|
-      ObserverPliReview.exists?(
-        employee_detail: employee,
-        financial_year: financial_year,
-        quarter: quarter,
-        month: month,
-        observer_level: observer_level,
-        status: "approved"
+      ObserverPliReview.cached_approved?(
+        employee.id,
+        financial_year,
+        quarter,
+        month,
+        observer_level
       )
     end
   end
@@ -391,24 +394,43 @@ module ApplicationHelper
     }[quarter.to_s] || []
   end
 
+  # The sidebar asks this for every observer level, and the levels cover largely
+  # the same employees. Select the ids with the unchanged scope, but build the
+  # heavy user_details/achievements preload once and reuse it across levels.
   def observer_employees_for_pending_count(observer_level)
+    scope = observer_pending_count_scope(observer_level)
+    return [] if scope.nil?
+
+    ids = scope.pluck(:id)
+    return [] if ids.empty?
+
+    pool = (@observer_employee_pool ||= {})
+    missing = ids.reject { |id| pool.key?(id) }
+    if missing.any?
+      EmployeeDetail.where(id: missing).includes(user_details: :achievements).each do |employee|
+        pool[employee.id] = employee
+      end
+    end
+
+    ids.filter_map { |id| pool[id] }
+  end
+
+  def observer_pending_count_scope(observer_level)
     scope = EmployeeDetail.order(Arel.sql("LOWER(employee_name) ASC"))
     scope = scope.where("TRIM(COALESCE(#{observer_level}, '')) != ''")
 
-    if current_user.admin? || current_user.hod?
-      scope.includes(user_details: :achievements).to_a
-    else
-      code = resolved_observer_identity_code(current_user)
-      return [] if code.blank?
+    return scope if current_user.admin? || current_user.hod?
 
-      reviewer_codes = current_user.reviewer_identity_codes
+    code = resolved_observer_identity_code(current_user)
+    return nil if code.blank?
 
-      scope.where(
-        "LOWER(TRIM(COALESCE(#{observer_level}, ''))) IN (:reviewer_codes) OR LOWER(TRIM(COALESCE(#{observer_level}, ''))) LIKE :code_prefix",
-        reviewer_codes: reviewer_codes,
-        code_prefix: "#{code.downcase}%"
-      ).includes(user_details: :achievements).to_a
-    end
+    reviewer_codes = current_user.reviewer_identity_codes
+
+    scope.where(
+      "LOWER(TRIM(COALESCE(#{observer_level}, ''))) IN (:reviewer_codes) OR LOWER(TRIM(COALESCE(#{observer_level}, ''))) LIKE :code_prefix",
+      reviewer_codes: reviewer_codes,
+      code_prefix: "#{code.downcase}%"
+    )
   end
 
   def observer_month_ready_for_review?(employee_detail, observer_level, user_details, month)

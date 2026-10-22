@@ -1785,12 +1785,12 @@ end
   def observer_month_remarks_for(employee_detail, financial_year, quarter, month, observer_level)
     return [] unless observer_levels_for(employee_detail).include?(observer_level)
 
-    review = ObserverPliReview.find_by(
-      employee_detail: employee_detail,
-      financial_year: financial_year,
-      quarter: quarter,
-      month: month,
-      observer_level: observer_level
+    review = ObserverPliReview.cached_find(
+      employee_detail.id,
+      financial_year,
+      quarter,
+      month,
+      observer_level
     )
     review&.final_remarks.present? ? [ review.final_remarks ] : []
   end
@@ -2062,6 +2062,7 @@ end
       [ quarter_name, months ]
     end
     employee_ids = employee_details.map(&:id)
+    ObserverPliReview.prime_cache(employee_ids, financial_year)
     observer_names_by_code = observer_names_by_code_for(employee_details)
     observer_reviews = ObserverPliReview
                          .where(employee_detail_id: employee_ids, financial_year: financial_year, quarter: quarters, observer_level: observer_level)
@@ -2155,13 +2156,12 @@ end
   end
 
   def observer_review_approved?(employee_detail, financial_year, quarter, month, observer_level)
-    ObserverPliReview.exists?(
-      employee_detail: employee_detail,
-      financial_year: financial_year,
-      quarter: quarter,
-      month: month,
-      observer_level: observer_level,
-      status: "approved"
+    ObserverPliReview.cached_approved?(
+      employee_detail.id,
+      financial_year,
+      quarter,
+      month,
+      observer_level
     )
   end
 
@@ -2261,6 +2261,7 @@ end
 
     quarters = quarter.present? ? [ quarter ] : get_all_quarters
     employee_ids = employee_details.map(&:id)
+    ObserverPliReview.prime_cache(employee_ids, financial_year)
     reviews = QuarterlyPliReview
                 .where(employee_detail_id: employee_ids, financial_year: financial_year, quarter: quarters)
                 .includes(:reviewed_by)
@@ -2403,7 +2404,7 @@ end
 
   def quarterly_pli_l1_name(employee)
     code = employee.l1_code.to_s.strip
-    resolved_name = EmployeeDetail.find_by("LOWER(TRIM(employee_code)) = ?", code.downcase)&.employee_name if code.present?
+    resolved_name = employee_name_for_normalized_code(code.downcase) if code.present?
     resolved_name.presence || employee.l1_employer_name.presence || code.presence || "-"
   end
 
@@ -2982,7 +2983,23 @@ end
     code = employee_detail.public_send(observer_level).to_s.strip
     return nil if code.blank?
 
-    EmployeeDetail.find_by(employee_code: code)&.employee_name
+    employee_name_for_exact_code(code)
+  end
+
+  # Exports resolve a reviewer name on every row and a handful of reviewers
+  # cover hundreds of employees, so remember each code for the request.
+  def employee_name_for_exact_code(code)
+    cache = (@employee_name_by_exact_code ||= {})
+    return cache[code] if cache.key?(code)
+
+    cache[code] = EmployeeDetail.find_by(employee_code: code)&.employee_name
+  end
+
+  def employee_name_for_normalized_code(code)
+    cache = (@employee_name_by_normalized_code ||= {})
+    return cache[code] if cache.key?(code)
+
+    cache[code] = EmployeeDetail.find_by("LOWER(TRIM(employee_code)) = ?", code)&.employee_name
   end
 
   def observer_activity_remarks_present?(employee_detail, month, observer_level)
@@ -3983,7 +4000,7 @@ end
       end
     end
 
-    activities.sort_by { |a| [ review_month_sort_index(a[:month]), a[:activity_name].to_s ] }
+    activities.sort_by { |a| [ review_month_sort_index(a[:month]), a[:activity_name] ] }
   end
 
   # Helper method to check if an activity can be approved
@@ -4070,7 +4087,7 @@ end
       end
     end
 
-    approvable_activities.sort_by { |a| [ review_month_sort_index(a[:month]), a[:activity_name].to_s ] }
+    approvable_activities.sort_by { |a| [ review_month_sort_index(a[:month]), a[:activity_name] ] }
   end
 
   # Get target value for a specific month
