@@ -1129,11 +1129,21 @@ class DepartmentsController < ApplicationController
                                              .where(user_details: { financial_year: financial_year })
                                              .distinct
                                              .includes(:user_details)
+                                             .to_a
+
+    # The per-employee query below is kept exactly as it was: its row order is
+    # unordered, and the first row decides which department an employee is
+    # shown under. Only the association loading is hoisted out of the loop,
+    # which used to cost two extra queries per employee.
+    year_details = UserDetail.where(employee_detail_id: employees_with_activities.map(&:id))
+                             .where(financial_year: financial_year)
+                             .where("activity_id IS NOT NULL")
+    activities_by_id = Activity.where(id: year_details.select(:activity_id)).index_by(&:id)
+    departments_by_id = Department.where(id: year_details.select(:department_id)).index_by(&:id)
 
     employees_with_activities.each do |employee|
       # Get activities for this employee and deduplicate
-      user_details = UserDetail.includes(:activity, :department)
-                              .where(employee_detail_id: employee.id)
+      user_details = UserDetail.where(employee_detail_id: employee.id)
                               .where(financial_year: financial_year)
                               .where("activity_id IS NOT NULL")
 
@@ -1143,8 +1153,8 @@ class DepartmentsController < ApplicationController
       end
 
       deduplicated_details.each do |user_detail|
-        activity = user_detail.activity
-        department = user_detail.department
+        activity = activities_by_id[user_detail.activity_id]
+        department = departments_by_id[user_detail.department_id]
 
         # Group by employee ONLY - no department grouping
         key = "#{employee_reference_value(employee)}"

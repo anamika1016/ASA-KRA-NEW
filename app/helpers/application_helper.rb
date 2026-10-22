@@ -16,6 +16,16 @@ module ApplicationHelper
     "march" => "MAR"
   }.freeze
 
+  # Same month-to-quarter mapping as quarter_name_for_month, for use inside SQL.
+  SIDEBAR_QUARTER_SQL = <<~SQL.squish.freeze
+    CASE
+      WHEN LOWER(achievements.month) IN ('april','may','june') THEN 'Q1'
+      WHEN LOWER(achievements.month) IN ('july','august','september') THEN 'Q2'
+      WHEN LOWER(achievements.month) IN ('october','november','december') THEN 'Q3'
+      WHEN LOWER(achievements.month) IN ('january','february','march') THEN 'Q4'
+    END
+  SQL
+
   def current_user_detail
     current_user&.user_detail
   end
@@ -249,8 +259,56 @@ module ApplicationHelper
     end
   end
 
+  # The sidebar only draws a dot, so it needs "is there at least one?". Letting
+  # the database find the unapproved rows avoids pulling every employee's user
+  # details and achievements into memory on every page render. The Ruby checks
+  # below still decide, so the answer matches observer_pending_reviews_count.
   def observer_pending_reviews?(observer_level)
-    observer_pending_reviews_count(observer_level).positive?
+    return false unless observer_level_assigned_to_user?(observer_level, current_user)
+
+    scope = observer_pending_count_scope(observer_level)
+    return false if scope.nil?
+
+    financial_year = sidebar_current_financial_year
+
+    observer_pending_candidates(scope, observer_level, financial_year).find_each(batch_size: 25) do |achievement|
+      next if achievement.achievement.blank?
+
+      employee = achievement.user_detail&.employee_detail
+      next unless observer_assigned?(employee, observer_level)
+      next if quarter_name_for_month(achievement.month.to_s.downcase).blank?
+
+      return true
+    end
+
+    false
+  rescue StandardError
+    false
+  end
+
+  # Achievements that are submitted, belong to the observer's employees and have
+  # no approved review yet. Mirrors the key comparison the count version makes:
+  # the stored review month is matched against the lowercased achievement month.
+  def observer_pending_candidates(employee_scope, observer_level, financial_year)
+    Achievement
+      .joins(user_detail: :employee_detail)
+      .merge(employee_scope.unscope(:order))
+      .where(user_details: { financial_year: financial_year })
+      .where.not(achievements: { achievement: [ nil, "" ] })
+      .where("LOWER(achievements.month) IN (?)", MONTH_SHORT_LABELS.keys)
+      .where(
+        "NOT EXISTS (
+           SELECT 1 FROM observer_pli_reviews opr
+           WHERE opr.employee_detail_id = employee_details.id
+             AND opr.financial_year = :financial_year
+             AND opr.quarter = #{SIDEBAR_QUARTER_SQL}
+             AND opr.month = LOWER(achievements.month)
+             AND opr.observer_level = :observer_level
+             AND opr.status = 'approved')",
+        financial_year: financial_year,
+        observer_level: observer_level
+      )
+      .includes(user_detail: :employee_detail)
   end
 
   def quarterly_pli_pending_reviews?

@@ -17,7 +17,8 @@ class ObserverPliReview < ApplicationRecord
   def self.cached_for(employee_detail_id, financial_year)
     cache = (Current.observer_pli_reviews ||= {})
     cache[[ employee_detail_id, financial_year ]] ||=
-      where(employee_detail_id: employee_detail_id, financial_year: financial_year).to_a
+      where(employee_detail_id: employee_detail_id, financial_year: financial_year)
+        .includes(:reviewed_by).to_a
   end
 
   def self.prime_cache(employee_detail_ids, financial_year)
@@ -25,7 +26,8 @@ class ObserverPliReview < ApplicationRecord
     missing = Array(employee_detail_ids).compact.uniq.reject { |id| cache.key?([ id, financial_year ]) }
     return if missing.empty?
 
-    grouped = where(employee_detail_id: missing, financial_year: financial_year).group_by(&:employee_detail_id)
+    grouped = where(employee_detail_id: missing, financial_year: financial_year)
+                .includes(:reviewed_by).group_by(&:employee_detail_id)
     missing.each { |id| cache[[ id, financial_year ]] = grouped[id] || [] }
   end
 

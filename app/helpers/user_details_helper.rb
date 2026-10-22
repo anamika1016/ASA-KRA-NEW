@@ -173,12 +173,8 @@ module UserDetailsHelper
     observer_summaries = ApplicationHelper::OBSERVER_LEVELS.filter_map do |observer_level|
       next unless observer_assigned?(employee_detail, observer_level)
 
-      review = ObserverPliReview.find_by(
-        employee_detail: employee_detail,
-        financial_year: financial_year,
-        quarter: quarter,
-        month: month,
-        observer_level: observer_level
+      review = ObserverPliReview.cached_find(
+        employee_detail.id, financial_year, quarter, month, observer_level
       )
 
       {
@@ -190,11 +186,7 @@ module UserDetailsHelper
       }
     end
 
-    quarterly_pli = QuarterlyPliReview.find_by(
-      employee_detail: employee_detail,
-      financial_year: financial_year,
-      quarter: quarter
-    )
+    quarterly_pli = QuarterlyPliReview.cached_find(employee_detail.id, financial_year, quarter)
 
     {
       month_label: short_month_label(month),
@@ -228,12 +220,8 @@ module UserDetailsHelper
     statuses = ApplicationHelper::OBSERVER_LEVELS.filter_map do |observer_level|
       next unless observer_assigned?(employee_detail, observer_level)
 
-      review = ObserverPliReview.find_by(
-        employee_detail: employee_detail,
-        financial_year: financial_year,
-        quarter: quarter,
-        month: month_key,
-        observer_level: observer_level
+      review = ObserverPliReview.cached_find(
+        employee_detail.id, financial_year, quarter, month_key, observer_level
       )
       reviewer = submitted_reviewer_identity(employee_detail.public_send(observer_level))
 
@@ -262,11 +250,7 @@ module UserDetailsHelper
       reviewed_at: latest_l1_review&.l1_reviewed_at || (latest_l1_action&.updated_at if l1_status != "pending")
     )
 
-    quarterly_review = QuarterlyPliReview.find_by(
-      employee_detail: employee_detail,
-      financial_year: financial_year,
-      quarter: quarter
-    )
+    quarterly_review = QuarterlyPliReview.cached_find(employee_detail.id, financial_year, quarter)
     statuses << submitted_workflow_status(
       role: "Quarterly PLI (#{quarter})",
       status: quarterly_review&.status || "pending",
@@ -300,9 +284,7 @@ module UserDetailsHelper
   def submitted_reviewer_identity(raw_code, fallback_name = nil)
     code = raw_code.to_s.strip
     normalized_code = code.split(/\s+-\s+/, 2).first.to_s.strip
-    reviewer = if normalized_code.present?
-      EmployeeDetail.where("LOWER(TRIM(employee_code)) = ?", normalized_code.downcase).first
-    end
+    reviewer = employee_by_normalized_code(normalized_code.downcase) if normalized_code.present?
 
     {
       name: reviewer&.employee_name.to_s.strip.presence || fallback_name.to_s.strip.presence,
@@ -310,10 +292,19 @@ module UserDetailsHelper
     }
   end
 
+  # A handful of reviewers cover every row on the page, so resolve each code
+  # once per request rather than once per rendered status.
+  def employee_by_normalized_code(code)
+    cache = (Current.employees_by_normalized_code ||= {})
+    return cache[code] if cache.key?(code)
+
+    cache[code] = EmployeeDetail.where("LOWER(TRIM(employee_code)) = ?", code).first
+  end
+
   def submitted_reviewed_by_name(user)
     return nil if user.blank?
 
-    employee = EmployeeDetail.where("LOWER(TRIM(employee_code)) = ?", user.employee_code.to_s.strip.downcase).first
+    employee = employee_by_normalized_code(user.employee_code.to_s.strip.downcase)
     employee&.employee_name.to_s.strip.presence || user.email.to_s.split("@").first.to_s.titleize.presence
   end
 

@@ -7,6 +7,15 @@ class EmployeeDetailsController < ApplicationController
   before_action :set_employee_detail, only: [ :edit, :update, :destroy, :toggle_portal_status, :update_portal_role ]
   load_and_authorize_resource except: [ :show, :approve, :return, :l2_approve, :l2_return, :edit_l1, :edit_l2, :toggle_portal_status, :update_portal_role, :toggle_sidebar_menu, :bulk_update_portal_status, :bulk_destroy, :quarterly_pli, :quarterly_pli_report, :export_quarterly_pli_xlsx, :quarterly_pli_detail, :archived_detail, :save_quarterly_pli, :observer_1, :observer_2, :observer_3, :observer_4, :observer_pli_detail, :save_observer_pli, :kra_targets, :export_kra_targets, :submission_overview, :archived, :export_archived_xlsx, :export_submission_overview_xlsx, :export_l1_xlsx, :export_observer_pli_xlsx ]
 
+  # Apply the same review period to listings, exports, and direct review requests.
+  before_action :restrict_user_review_period, only: %i[
+    l1 export_l1_xlsx observer_1 observer_2 observer_3 observer_4
+    export_observer_pli_xlsx observer_pli_detail save_observer_pli
+    quarterly_pli quarterly_pli_detail save_quarterly_pli
+    quarterly_pli_report export_quarterly_pli_xlsx
+    show approve return edit_l1
+  ]
+
   def index
     @employee_detail = EmployeeDetail.new
     @q = EmployeeDetail.ransack(params[:q])
@@ -962,7 +971,7 @@ end
 
     @selected_quarterly_pli_quarter = params[:quarter].presence
     @selected_financial_year = selected_financial_year || current_financial_year
-    @quarter_options = get_all_quarters.map do |quarter|
+    @quarter_options = available_review_quarters.map do |quarter|
       [ "#{quarter} (#{get_quarter_months(quarter).map { |month| month_label(month) }.join('-')})", quarter ]
     end
 
@@ -982,6 +991,7 @@ end
     @financial_year_options |= [ @selected_financial_year ]
     @financial_year_options.compact!
     @financial_year_options.sort!.reverse!
+    @financial_year_options = [ @restricted_review_year ] if @restricted_review_year
     @quarterly_pli_rows = build_quarterly_pli_rows(
       employee_details,
       financial_year: @selected_financial_year,
@@ -997,7 +1007,7 @@ end
 
     @selected_quarterly_pli_quarter = params[:quarter].presence
     @selected_financial_year = selected_financial_year || current_financial_year
-    @quarter_options = get_all_quarters.map do |quarter|
+    @quarter_options = available_review_quarters.map do |quarter|
       [ "#{quarter} (#{get_quarter_months(quarter).map { |month| month_label(month) }.join('-')})", quarter ]
     end
     employee_details = quarterly_pli_report_employee_scope.includes(
@@ -1011,6 +1021,7 @@ end
     @financial_year_options |= [ @selected_financial_year ]
     @financial_year_options.compact!
     @financial_year_options.sort!.reverse!
+    @financial_year_options = [ @restricted_review_year ] if @restricted_review_year
     @quarterly_pli_rows = build_quarterly_pli_rows(
       employee_details,
       financial_year: @selected_financial_year,
@@ -2021,7 +2032,7 @@ end
     @selected_observer_pli_quarter = params[:quarter].presence
     @selected_observer_pli_month = nil
     @selected_financial_year = selected_financial_year || current_financial_year
-    @quarter_options = get_all_quarters.map do |quarter|
+    @quarter_options = available_review_quarters.map do |quarter|
       [ "#{quarter} (#{get_quarter_months(quarter).map { |month| month_label(month) }.join('-')})", quarter ]
     end
     employee_details = observer_pli_employee_scope(observer_level).includes(
@@ -2041,6 +2052,7 @@ end
     @financial_year_options |= [ @selected_financial_year ]
     @financial_year_options.compact!
     @financial_year_options.sort!.reverse!
+    @financial_year_options = [ @restricted_review_year ] if @restricted_review_year
     @observer_pli_rows = build_observer_pli_rows(
       employee_details,
       observer_level: observer_level,
@@ -2849,6 +2861,41 @@ end
     }.compact
   end
 
+  def restrict_user_review_period
+    return if current_user.admin? || current_user.hod?
+    # KRA History has its own access policy and remains a historical view.
+    return if action_name == "show" && params[:source] == "archived"
+
+    # Keep the completed quarter open throughout the next quarter's first month.
+    review_date = Date.current
+    review_date = review_date.prev_month if [ 1, 4, 7, 10 ].include?(review_date.month)
+    @restricted_review_quarter = quarter_for_month(review_date.strftime("%B").downcase)
+    start_year = review_date.month >= 4 ? review_date.year : review_date.year - 1
+    @restricted_review_year = "#{start_year}-#{start_year + 1}"
+    months = get_quarter_months(@restricted_review_quarter)
+    invalid_period = %i[quarter selected_quarter].any? do |key|
+      params[key].present? && params[key] != @restricted_review_quarter
+    end
+    invalid_period ||= %i[month selected_month].any? do |key|
+      params[key].present? && !months.include?(params[key].to_s.downcase.strip)
+    end
+    invalid_period ||= %i[financial_year selected_financial_year].any? do |key|
+      params[key].present? && params[key] != @restricted_review_year
+    end
+    if invalid_period
+      render plain: "Only the active review quarter is available for your login.", status: :forbidden
+      return
+    end
+
+    params[:quarter] = @restricted_review_quarter
+    params[:selected_quarter] = @restricted_review_quarter
+    params[:financial_year] = @restricted_review_year
+  end
+
+  def available_review_quarters
+    @restricted_review_quarter ? [ @restricted_review_quarter ] : get_all_quarters
+  end
+
   def selected_financial_year
     params[:financial_year].presence || params[:selected_financial_year].presence
   end
@@ -2935,7 +2982,8 @@ end
   end
 
   def prepare_review_filters(employee_details)
-    @month_options = review_months.map { |month| [ month_label(month), month ] }
+    months = @restricted_review_quarter ? get_quarter_months(@restricted_review_quarter) : review_months
+    @month_options = months.map { |month| [ month_label(month), month ] }
     @selected_review_month = normalize_month_param(params[:month])
     @selected_financial_year = selected_financial_year || current_financial_year
     @financial_year_options = employee_details.flat_map { |employee|
@@ -2944,6 +2992,7 @@ end
     @financial_year_options |= [ @selected_financial_year ]
     @financial_year_options.compact!
     @financial_year_options.sort!.reverse!
+    @financial_year_options = [ @restricted_review_year ] if @restricted_review_year
   end
 
   def review_user_details_for(employee_detail)
@@ -3057,6 +3106,7 @@ end
     add_status_reviewer_details!(monthly_data, employee_details)
 
     months_to_review = month.present? ? [ month ] : review_months
+    months_to_review &= get_quarter_months(@restricted_review_quarter) if @restricted_review_quarter
 
     employee_details.each do |emp|
       detail_groups = if financial_year.present?
@@ -3742,6 +3792,7 @@ end
   def build_monthly_employee_data(employee_details, approval_level:, month: nil, financial_year: nil)
     monthly_employee_data = {}
     months_to_review = month.present? ? [ month ] : review_months
+    months_to_review &= get_quarter_months(@restricted_review_quarter) if @restricted_review_quarter
 
     employee_details.each do |emp|
       next if approval_level == "l2" && !l2_reviewer_assigned?(emp)

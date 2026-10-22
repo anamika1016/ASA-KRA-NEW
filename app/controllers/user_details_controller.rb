@@ -569,6 +569,8 @@ class UserDetailsController < ApplicationController
       @user_details = UserDetail.none
     end
 
+    prime_submitted_review_caches(@user_details)
+
     set_active_month_context(@user_details, include_all_months: true)
     if params[:month].blank?
       first_month_with_data = MONTH_ATTRIBUTES.find do |month_key|
@@ -2481,6 +2483,18 @@ class UserDetailsController < ApplicationController
       "october" => "Q3", "november" => "Q3", "december" => "Q3",
       "january" => "Q4", "february" => "Q4", "march" => "Q4"
     }[month.to_s.downcase]
+  end
+
+  # The status column asks for each employee's observer and quarterly reviews
+  # once per rendered row. Load them for the whole page up front instead.
+  def prime_submitted_review_caches(user_details)
+    user_details.group_by(&:financial_year).each do |financial_year, details|
+      employee_ids = details.filter_map(&:employee_detail_id).uniq
+      next if employee_ids.empty?
+
+      ObserverPliReview.prime_cache(employee_ids, financial_year)
+      QuarterlyPliReview.prime_cache(employee_ids, financial_year)
+    end
   end
 
   def submitted_achievements_observer_levels(user_details)

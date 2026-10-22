@@ -9,7 +9,7 @@
         <div class="flex flex-col sm:flex-row gap-3">
           <input type="search" id="quarterlyPliReportSearch" placeholder="Search employees..." class="w-full sm:w-64 rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">
           <%= form_with url: quarterly_pli_report_employee_details_path, method: :get, local: true, class: "flex flex-col sm:flex-row gap-3", data: { turbo: false } do %>
-            <%= select_tag :quarter, options_for_select([["All Quarters", ""]] + @quarter_options, @selected_quarterly_pli_quarter), class: "rounded-lg border border-gray-300 px-3 py-2 text-sm", onchange: "this.form.submit()" %>
+            <%= select_tag :quarter, options_for_select((@restricted_review_quarter ? [] : [["All Quarters", ""]]) + @quarter_options, @selected_quarterly_pli_quarter), class: "rounded-lg border border-gray-300 px-3 py-2 text-sm", onchange: "this.form.submit()" %>
             <%= select_tag :financial_year, options_for_select(@financial_year_options, @selected_financial_year), class: "rounded-lg border border-gray-300 px-3 py-2 text-sm", onchange: "this.form.submit()" %>
           <% end %>
           <%= link_to export_quarterly_pli_xlsx_employee_details_path(financial_year: @selected_financial_year, quarter: @selected_quarterly_pli_quarter), class: "inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800" do %>
