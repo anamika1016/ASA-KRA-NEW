@@ -674,7 +674,10 @@ class EmployeeDetailsController < ApplicationController
         return
       end
     else
-      authorize! :read, @employee_detail
+      # Use the same assignment scope as the L1 list and approval actions.
+      # Legacy assignments may identify the reviewer by their linked name or
+      # email rather than the login code/email used by Ability.
+      authorize! :read, @employee_detail unless can_act_as_l1?(@employee_detail)
     end
     prepare_employee_detail_show
   rescue CanCan::AccessDenied
