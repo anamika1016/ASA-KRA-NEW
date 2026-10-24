@@ -677,6 +677,8 @@ class EmployeeDetailsController < ApplicationController
       authorize! :read, @employee_detail
     end
     prepare_employee_detail_show
+  rescue CanCan::AccessDenied
+    redirect_to root_path, alert: "You are not authorized to view this employee's KRA. Please contact HOD to verify your employee code and reviewer assignment."
   end
 
   # User-wise KRA target overview for L1 and Observer menus.

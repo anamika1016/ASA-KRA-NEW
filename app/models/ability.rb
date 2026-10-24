@@ -11,8 +11,10 @@ class Ability
 
     # Basic employee permissions
     if user.employee? || user.l1_employer? || user.l2_employer?
-      can :read, EmployeeDetail, employee_email: user.email
-      can :read, EmployeeDetail, employee_code: user.employee_code
+      can :read, EmployeeDetail do |ed|
+        code_matches?(ed.employee_email, user.email) ||
+          code_matches?(ed.employee_code, user.employee_code)
+      end
     end
 
     # L1 Permissions - Check if user's employee_code matches any l1_code OR email matches l1_employer_name
@@ -113,7 +115,9 @@ class Ability
   private
 
   def code_matches?(left, right)
-    left.to_s.strip.downcase == right.to_s.strip.downcase
+    normalized_left = left.to_s.strip.downcase
+    normalized_right = right.to_s.strip.downcase
+    normalized_left.present? && normalized_right.present? && normalized_left == normalized_right
   end
 
   def reviewer_code_matches?(assigned_code, user)
