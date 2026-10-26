@@ -1,4 +1,5 @@
 class UserDetailsController < ApplicationController
+  require "axlsx"
   require "csv"
   require "nokogiri"
   require "roo"
@@ -652,12 +653,14 @@ class UserDetailsController < ApplicationController
     quarter_label  = QUARTER_LABELS[quarter]        # e.g. "Q1 PLI (APR-MAY-JUN)"
 
     scope = EmployeeDetail.includes(
+      :quarterly_pli_reviews,
       user_details: [ :activity, :department, { achievements: :achievement_remark } ]
     ).order(:employee_name)
     scope = scope.where(id: employee_detail_id) if employee_detail_id.present?
 
     employee_details = scope.to_a
     financial_year   = @selected_financial_year
+    ObserverPliReview.prime_cache(employee_details.map(&:id), financial_year)
 
     package = Axlsx::Package.new
     wb      = package.workbook
@@ -673,7 +676,7 @@ class UserDetailsController < ApplicationController
       border: { style: :thin, color: "CBD5E1" }
     )
 
-    # ── Column headers: always fixed 9 + (6 per month) + 2 quarterly ─────────
+    # ── Column headers: always fixed 9 + (6 per month) + 3 quarterly ─────────
     fixed_headers = [
       "Employee Code", "Employee Name", "Location", "Department",
       "OB1 Name", "OB2 Name", "OB3 Name", "OB4 Name", "L1 Name"
@@ -692,7 +695,8 @@ class UserDetailsController < ApplicationController
     end
 
     quarterly_headers = [
-      "#{quarter_label} % Achievement",
+      "#{quarter_label} Calculated Achievement %",
+      "#{quarter_label} Final PLI %",
       "#{quarter_label} Remarks"
     ]
 
@@ -713,38 +717,42 @@ class UserDetailsController < ApplicationController
         year_details.each do |ud|
           ach_map[ud.id] = {}
           ud.achievements.each do |a|
-            ach_map[ud.id][a.month.to_s.downcase] = a
+            month = a.month.to_s.downcase
+            ach_map[ud.id][month] ||= a if a.achievement.present?
           end
         end
 
         # ── Month % = average of (achievement/target × 100) across all KRIs ──
         month_percent_for = lambda do |month|
           progress_vals = year_details.filter_map do |ud|
-            target = ud.public_send(month).to_s.to_f
+            next unless ud.activity.present?
+            target = ud.public_send(month).to_s.delete(",").to_f
             next unless target.positive?
             ach    = ach_map.dig(ud.id, month)
-            achieve = ach&.achievement.to_s.to_f || 0.0
-            (achieve / target) * 100
+            achieve = ach&.achievement.to_s.delete(",").to_f || 0.0
+            (((achieve / target) * 100 * 100).floor / 100.0)
           end
           return "-" if progress_vals.empty?
-          "#{'%.2f' % (progress_vals.sum / progress_vals.size)}%"
+          "#{'%.2f' % (((progress_vals.sum / progress_vals.size) * 100).floor / 100.0)}%"
         end
 
-        # ── Remarks: collect from all KRIs, join unique non-blank values ──
+        # Match the monthly summary on Quarterly PLI: latest L1 remark and
+        # the observer's saved monthly final remarks, rather than KRI comments.
         l1_remarks_for = lambda do |month|
           remarks = year_details.filter_map do |ud|
-            ach = ach_map.dig(ud.id, month)
-            ach&.achievement_remark&.l1_remarks.to_s.strip.presence
-          end.uniq
-          remarks.any? ? remarks.join(" | ") : "-"
+            next unless ud.activity.present? && ud.public_send(month).to_s.delete(",").to_f.positive?
+            achievement = ach_map.dig(ud.id, month)
+            next unless achievement&.achievement.present?
+            achievement.achievement_remark
+          end
+          latest = remarks.select { |remark| remark.l1_remarks.present? }.max_by(&:updated_at)
+          latest&.l1_remarks.to_s.strip.presence || "-"
         end
 
         obs_remarks_for = lambda do |month, n|
-          remarks = year_details.filter_map do |ud|
-            ach = ach_map.dig(ud.id, month)
-            ach&.achievement_remark&.public_send("obs_code#{n}_remarks").to_s.strip.presence
-          end.uniq
-          remarks.any? ? remarks.join(" | ") : "-"
+          next "-" unless emp.observer_assigned?("obs_code#{n}")
+          review = ObserverPliReview.cached_find(emp.id, financial_year, quarter, month, "obs_code#{n}")
+          review&.final_remarks.presence || "-"
         end
 
         # ── Reviewer names ──────────────────────────────────────────────────
@@ -787,37 +795,30 @@ class UserDetailsController < ApplicationController
           ]
         end
 
-        # ── Quarterly PLI % = average of per-month averages ─────────────────
-        q_percent = begin
-          monthly_avgs = quarter_months.filter_map do |m|
-            progress_vals = year_details.filter_map do |ud|
-              t = ud.public_send(m).to_s.to_f
-              next unless t.positive?
-              a = ach_map.dig(ud.id, m)
-              achieve = a&.achievement.to_s.to_f || 0.0
-              (achieve / t) * 100
-            end
-            next if progress_vals.empty?
-            progress_vals.sum / progress_vals.size
-          end
-          monthly_avgs.any? ? "#{'%.2f' % (monthly_avgs.sum / monthly_avgs.size)}%" : "-"
+        # Quarterly PLI is the saved final decision, not the calculated average.
+        review = emp.quarterly_pli_reviews.find do |record|
+          record.financial_year.to_s == financial_year.to_s && record.quarter == quarter
+        end
+        q_percent = review&.status == "approved" && !review.final_percentage.nil? ?
+          "#{'%.2f' % review.final_percentage}%" : "-"
+        q_remarks = review&.final_remarks.presence || "-"
+
+        monthly_percentages = quarter_months.map { |month| month_percent_for.call(month) }.reject { |value| value == "-" }.map(&:to_f)
+        calculated_percent = if monthly_percentages.any?
+          "#{format('%.2f', ((monthly_percentages.sum / monthly_percentages.size) * 100).floor / 100.0)}%"
+        else
+          "-"
         end
 
-        # ── Quarterly Remarks = join per-month L1 remarks ───────────────────
-        q_remarks = quarter_months.filter_map do |m|
-          r = l1_remarks_for.call(m)
-          r == "-" ? nil : "#{MONTH_SHORT[m]}: #{r}"
-        end.join(" | ").presence || "-"
-
-        row = fixed_values + monthly_values + [ q_percent, q_remarks ]
+        row = fixed_values + monthly_values + [ calculated_percent, q_percent, q_remarks ]
         sheet.add_row(row, style: cell_style, height: 24)
       end
 
 
-      # Column widths: 9 fixed + 6 per month + 2 quarterly
+      # Column widths: 9 fixed + 6 per month + 3 quarterly
       fixed_widths   = [ 16, 28, 18, 22, 22, 22, 22, 22, 22 ]
       monthly_widths = quarter_months.flat_map { [ 20, 26, 26, 26, 26, 36 ] }
-      quarter_widths = [ 26, 42 ]
+      quarter_widths = [ 26, 26, 42 ]
       sheet.column_widths(*(fixed_widths + monthly_widths + quarter_widths))
 
       sheet.auto_filter = "A1:#{last_col_ref}1"
