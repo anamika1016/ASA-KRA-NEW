@@ -1,0 +1,545 @@
+<%
+  quarter_months_map = {
+    "Q1" => %w[april may june],
+    "Q2" => %w[july august september],
+    "Q3" => %w[october november december],
+    "Q4" => %w[january february march]
+  }
+  quarter_labels_map = {
+    "Q1" => "Q1 PLI (APR-MAY-JUN)",
+    "Q2" => "Q2 PLI (JUL-AUG-SEP)",
+    "Q3" => "Q3 PLI (OCT-NOV-DEC)",
+    "Q4" => "Q4 PLI (JAN-FEB-MAR)"
+  }
+  month_short_map = {
+    "april" => "APR", "may" => "MAY", "june" => "JUN",
+    "july" => "JUL", "august" => "AUG", "september" => "SEP",
+    "october" => "OCT", "november" => "NOV", "december" => "DEC",
+    "january" => "JAN", "february" => "FEB", "march" => "MAR"
+  }
+  quarter_colors = {
+    "Q1" => { bg: "#4f46e5", light: "#f5f3ff", border: "#c4b5fd", badge: "#6d28d9" },
+    "Q2" => { bg: "#0891b2", light: "#ecfeff", border: "#a5f3fc", badge: "#0e7490" },
+    "Q3" => { bg: "#d97706", light: "#fffbeb", border: "#fcd34d", badge: "#b45309" },
+    "Q4" => { bg: "#be185d", light: "#fdf2f8", border: "#f9a8d4", badge: "#9d174d" }
+  }
+  selected_color = quarter_colors[@selected_quarter]
+  q_months = @quarter_months
+  q_label  = quarter_labels_map[@selected_quarter]
+%>
+
+<div class="main-content udr-page">
+
+  <!-- ── Page Header ──────────────────────────────────────────────────────── -->
+  <div class="udr-header-card">
+    <div class="udr-title-row">
+      <div class="udr-title-left">
+        <div class="udr-icon-wrap" style="background: linear-gradient(135deg, <%= selected_color[:bg] %>, <%= selected_color[:badge] %>);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="udr-icon">
+            <rect x="4" y="5" width="16" height="14" rx="2.5"/>
+            <path d="M8 10h8M8 13.5h5.5M16.5 13.5h1M16.5 10h1"/>
+            <circle cx="8.5" cy="8" r="1" fill="currentColor" stroke="none"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="udr-title">User Data Report</h1>
+          <p class="udr-subtitle">Employee-wise achievement data with reviewer remarks &amp; quarterly PLI summary</p>
+        </div>
+      </div>
+
+      <!-- Financial Year + Quarter filters -->
+      <div class="udr-filters">
+        <%= form_with url: user_data_report_user_details_path, method: :get, local: true, class: "udr-filter-form" do |f| %>
+          <%# Preserve quarter when FY changes %>
+          <%= f.hidden_field :quarter, value: @selected_quarter %>
+          <label class="udr-label">Financial Year</label>
+          <%= f.select :financial_year,
+              options_for_select(@financial_years, @selected_financial_year),
+              {},
+              id: "fy_select",
+              class: "udr-select",
+              onchange: "this.form.submit();" %>
+        <% end %>
+      </div>
+    </div>
+
+    <!-- Quarter selector tabs -->
+    <div class="udr-quarter-tabs">
+      <% %w[Q1 Q2 Q3 Q4].each do |q| %>
+        <%
+          qm = quarter_months_map[q]
+          q_short = qm.map { |m| month_short_map[m] }.join("-")
+          qc = quarter_colors[q]
+          is_active = q == @selected_quarter
+        %>
+        <%= link_to user_data_report_user_details_path(quarter: q, financial_year: @selected_financial_year),
+            class: "udr-qtab #{is_active ? 'udr-qtab--active' : ''}",
+            style: is_active ? "background: #{qc[:bg]}; color: white; border-color: #{qc[:bg]};" : "border-color: #{qc[:border]}; color: #{qc[:bg]}; background: #{qc[:light]};" do %>
+          <span class="udr-qtab-name"><%= q %></span>
+          <span class="udr-qtab-months"><%= q_short %></span>
+        <% end %>
+      <% end %>
+    </div>
+
+    <!-- Stats bar -->
+    <div class="udr-stats" style="border-color: <%= selected_color[:border] %>; background: <%= selected_color[:light] %>;">
+      <div class="udr-stat">
+        <span class="udr-stat-num" style="color: <%= selected_color[:bg] %>;"><%= @employee_details.size %></span>
+        <span class="udr-stat-label">Total Employees</span>
+      </div>
+      <div class="udr-stat">
+        <span class="udr-stat-num" style="color: <%= selected_color[:bg] %>;"><%= @selected_quarter %></span>
+        <span class="udr-stat-label">Selected Quarter (<%= q_months.map { |m| month_short_map[m] }.join("–") %>)</span>
+      </div>
+      <div class="udr-stat">
+        <span class="udr-stat-num" style="color: <%= selected_color[:bg] %>;"><%= @selected_financial_year %></span>
+        <span class="udr-stat-label">Financial Year</span>
+      </div>
+      <div class="udr-stat">
+        <span class="udr-stat-num" style="color: <%= selected_color[:bg] %>;"><%= 9 + (q_months.size * 6) + 2 %></span>
+        <span class="udr-stat-label">Total Columns in Excel</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Download Section ──────────────────────────────────────────────────── -->
+  <div class="udr-download-section">
+    <h2 class="udr-section-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="udr-sec-icon" style="stroke: <%= selected_color[:bg] %>;">
+        <path d="M12 3v12M8 11l4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+      </svg>
+      Download Excel — <span style="color: <%= selected_color[:bg] %>"><%= @selected_quarter %> Report (<%= @selected_financial_year %>)</span>
+    </h2>
+    <p class="udr-section-desc">
+      Columns: Employee Info (4) &rarr; Reviewer Names (5) &rarr;
+      <strong><%= q_months.map { |m| month_short_map[m] }.join(", ") %></strong> monthly data (6 cols each) &rarr;
+      <strong><%= q_label %></strong> % &amp; Remarks
+    </p>
+
+    <div class="udr-download-grid">
+
+      <!-- All Users -->
+      <div class="udr-download-card" style="border-color: <%= selected_color[:border] %>; background: <%= selected_color[:light] %>;">
+        <div class="udr-download-icon" style="background: linear-gradient(135deg, #16a34a, #15803d);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8">
+            <path d="M3.5 7h17M3.5 11h17M3.5 15h11.5"/>
+            <path d="M16.5 13l3 3-3 3"/>
+          </svg>
+        </div>
+        <div class="udr-download-body">
+          <h3 class="udr-download-title">All Employees</h3>
+          <p class="udr-download-desc">
+            Download <strong><%= @selected_quarter %></strong> report for all
+            <strong><%= @employee_details.size %></strong> employees — <%= @selected_financial_year %>.
+          </p>
+          <%= link_to export_user_data_xlsx_user_details_path(
+                financial_year: @selected_financial_year,
+                quarter: @selected_quarter),
+              id: "download-all-btn",
+              class: "udr-btn udr-btn-green" do %>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="udr-btn-icon">
+              <path d="M4 6h8l3 3h5v10H4z"/>
+              <path d="M12 11v5M9.5 14l2.5 2.5 2.5-2.5"/>
+            </svg>
+            Download All Users Excel
+          <% end %>
+        </div>
+      </div>
+
+      <!-- User-wise -->
+      <div class="udr-download-card" style="border-color: <%= selected_color[:border] %>; background: <%= selected_color[:light] %>;">
+        <div class="udr-download-icon" style="background: linear-gradient(135deg, <%= selected_color[:bg] %>, <%= selected_color[:badge] %>);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8">
+            <circle cx="10" cy="8" r="3"/>
+            <path d="M4 19c1.1-2.6 3.5-4 6-4s4.9 1.4 6 4"/>
+            <path d="M17.5 10.5h4M19.5 8.5v4"/>
+          </svg>
+        </div>
+        <div class="udr-download-body">
+          <h3 class="udr-download-title">Single Employee</h3>
+          <p class="udr-download-desc">Select one employee and download their individual <strong><%= @selected_quarter %></strong> report.</p>
+          <%= form_with url: export_user_data_xlsx_user_details_path,
+              method: :get, local: true, id: "udr-user-form", class: "udr-inline-form" do |f| %>
+            <%= f.hidden_field :financial_year, value: @selected_financial_year %>
+            <%= f.hidden_field :quarter, value: @selected_quarter %>
+            <%= f.select :employee_detail_id,
+                options_for_select(
+                  @employee_details.map { |e| ["#{e.employee_name} (#{e.employee_code})", e.id] },
+                  params[:employee_detail_id]
+                ),
+                { include_blank: "-- Select Employee --" },
+                id: "employee_select",
+                class: "udr-select udr-emp-select" %>
+            <%= f.button type: "submit", class: "udr-btn udr-btn-quarter", id: "download-user-btn",
+                style: "background: linear-gradient(135deg, #{selected_color[:bg]}, #{selected_color[:badge]});" do %>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="udr-btn-icon">
+                <path d="M4 6h8l3 3h5v10H4z"/>
+                <path d="M12 11v5M9.5 14l2.5 2.5 2.5-2.5"/>
+              </svg>
+              Download User Excel
+            <% end %>
+          <% end %>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Column Structure Preview ──────────────────────────────────────────── -->
+  <div class="udr-info-card">
+    <h2 class="udr-section-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="udr-sec-icon" style="stroke: <%= selected_color[:bg] %>;">
+        <circle cx="12" cy="12" r="8.5"/>
+        <path d="M12 8v4.5M12 15v1.5"/>
+      </svg>
+      Excel Column Preview — <strong><%= @selected_quarter %> (<%= q_months.map { |m| month_short_map[m] }.join("–") %>)</strong>
+    </h2>
+
+    <div class="udr-column-grid">
+      <!-- Fixed: Employee Info -->
+      <div class="udr-col-group">
+        <div class="udr-col-group-title" style="background: #4f46e5;">Employee Info</div>
+        <div class="udr-col-list">
+          <span>Employee Code</span><span>Employee Name</span>
+          <span>Location</span><span>Department</span>
+        </div>
+      </div>
+
+      <!-- Fixed: Reviewer Names -->
+      <div class="udr-col-group">
+        <div class="udr-col-group-title" style="background: #0891b2;">Reviewer Names</div>
+        <div class="udr-col-list">
+          <span>OB1 Name</span><span>OB2 Name</span>
+          <span>OB3 Name</span><span>OB4 Name</span><span>L1 Name</span>
+        </div>
+      </div>
+
+      <!-- Dynamic: one card per month in selected quarter -->
+      <% q_months.each_with_index do |month, idx| %>
+        <%
+          label = month_short_map[month]
+          month_colors = ["#059669","#d97706","#7c3aed"]
+          mc = month_colors[idx % month_colors.size]
+        %>
+        <div class="udr-col-group">
+          <div class="udr-col-group-title" style="background: <%= mc %>;"><%= label %> Columns</div>
+          <div class="udr-col-list">
+            <span class="udr-col-highlight"><%= label %> % Achievement</span>
+            <span><%= label %> OB1 Remarks</span>
+            <span><%= label %> OB2 Remarks</span>
+            <span><%= label %> OB3 Remarks</span>
+            <span><%= label %> OB4 Remarks</span>
+            <span><%= label %> L1 Remarks</span>
+          </div>
+        </div>
+      <% end %>
+
+      <!-- Quarterly Summary -->
+      <div class="udr-col-group">
+        <div class="udr-col-group-title" style="background: <%= selected_color[:bg] %>;"><%= @selected_quarter %> PLI Summary</div>
+        <div class="udr-col-list">
+          <span class="udr-col-highlight"><%= q_label %> % Achievement</span>
+          <span><%= q_label %> Remarks</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   User Data Report – page styles
+═══════════════════════════════════════════════════════════════════════════ */
+.udr-page {
+  margin-left: 240px;
+  padding: 2rem;
+  background: linear-gradient(135deg, #f0f4ff 0%, #f8fafc 60%, #fdf4ff 100%);
+  min-height: 100vh;
+}
+
+/* Header card */
+.udr-header-card {
+  background: white;
+  border-radius: 1.25rem;
+  box-shadow: 0 4px 24px rgba(80,60,180,0.08);
+  padding: 2rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid #e0e7ff;
+  animation: fadeUp 0.45s ease-out;
+}
+
+.udr-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.udr-title-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.udr-icon-wrap {
+  width: 56px;
+  height: 56px;
+  border-radius: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+}
+
+.udr-icon { width: 28px; height: 28px; stroke: white; }
+
+.udr-title {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #1e1b4b;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.udr-subtitle {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0.2rem 0 0;
+}
+
+/* Filters */
+.udr-filters { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.udr-filter-form { display: flex; align-items: center; gap: 0.5rem; }
+
+.udr-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #374151;
+  white-space: nowrap;
+}
+
+.udr-select {
+  background: white;
+  border: 1.5px solid #d1d5db;
+  border-radius: 0.625rem;
+  padding: 0.5rem 0.875rem;
+  font-size: 0.875rem;
+  color: #374151;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.udr-select:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+}
+
+/* Quarter tabs */
+.udr-quarter-tabs {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+.udr-qtab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.6rem 1.5rem;
+  border-radius: 0.75rem;
+  border: 2px solid transparent;
+  text-decoration: none;
+  transition: all 0.2s;
+  min-width: 90px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.udr-qtab:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); text-decoration: none; }
+
+.udr-qtab-name { font-size: 1rem; font-weight: 800; line-height: 1; }
+.udr-qtab-months { font-size: 0.7rem; font-weight: 500; margin-top: 0.15rem; opacity: 0.85; }
+
+/* Stats */
+.udr-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-radius: 0.875rem;
+  border: 1.5px solid;
+}
+
+.udr-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 110px;
+}
+
+.udr-stat-num { font-size: 1.5rem; font-weight: 800; line-height: 1; }
+.udr-stat-label { font-size: 0.75rem; color: #6b7280; font-weight: 500; }
+
+/* Download section */
+.udr-download-section {
+  background: white;
+  border-radius: 1.25rem;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+  padding: 2rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid #e5e7eb;
+  animation: fadeUp 0.5s ease-out;
+}
+
+.udr-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1e1b4b;
+  margin: 0 0 0.5rem;
+}
+
+.udr-sec-icon { width: 20px; height: 20px; flex-shrink: 0; }
+
+.udr-section-desc {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0 0 1.5rem;
+  line-height: 1.6;
+}
+
+.udr-download-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+@media (max-width: 850px) { .udr-download-grid { grid-template-columns: 1fr; } }
+
+.udr-download-card {
+  display: flex;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  border-radius: 1rem;
+  border: 2px solid;
+  align-items: flex-start;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+.udr-download-card:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.1); transform: translateY(-2px); }
+
+.udr-download-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+.udr-download-icon svg { width: 24px; height: 24px; }
+
+.udr-download-body { flex: 1; }
+.udr-download-title { font-size: 1rem; font-weight: 700; color: #111827; margin: 0 0 0.25rem; }
+.udr-download-desc { font-size: 0.8125rem; color: #6b7280; margin: 0 0 1rem; line-height: 1.5; }
+
+.udr-inline-form { display: flex; flex-direction: column; gap: 0.75rem; }
+.udr-emp-select { width: 100%; }
+
+/* Buttons */
+.udr-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  border-radius: 0.625rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  align-self: flex-start;
+  color: white;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+}
+.udr-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.25); color: white; text-decoration: none; }
+.udr-btn-green { background: linear-gradient(135deg,#16a34a,#15803d); }
+.udr-btn-quarter { color: white; }
+
+.udr-btn-icon { width: 18px; height: 18px; }
+
+/* Info card */
+.udr-info-card {
+  background: white;
+  border-radius: 1.25rem;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+  padding: 2rem;
+  border: 1px solid #e5e7eb;
+  animation: fadeUp 0.55s ease-out;
+}
+
+.udr-column-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.udr-col-group {
+  border-radius: 0.75rem;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  min-width: 180px;
+  flex: 1 1 180px;
+}
+
+.udr-col-group-title {
+  padding: 0.5rem 0.875rem;
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.udr-col-list {
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  background: #fafafa;
+}
+
+.udr-col-list span {
+  font-size: 0.8rem;
+  color: #374151;
+  padding: 0.2rem 0.5rem;
+  background: white;
+  border-radius: 0.35rem;
+  border: 1px solid #f3f4f6;
+}
+
+.udr-col-highlight {
+  font-weight: 700 !important;
+  color: #1e1b4b !important;
+  border-color: #ddd6fe !important;
+  background: #f5f3ff !important;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 768px) {
+  .udr-page { margin-left: 0; padding: 1rem; }
+  .udr-title-row { flex-direction: column; }
+}
+</style>

@@ -27,7 +27,7 @@ class UserDetailsController < ApplicationController
 
   before_action :set_user_detail, only: [ :show, :edit, :update, :destroy ]
   before_action :require_employee_sidebar_access!, only: [ :get_user_detail, :submit_achievements, :submitted_achievements ]
-  load_and_authorize_resource except: [ :index, :new, :create, :get_user_detail, :get_activities, :bulk_create, :submit_achievements, :export, :import, :quarterly_edit_all, :update_quarterly_achievements, :test_sms, :view_sms_logs, :submitted_achievements ]
+  load_and_authorize_resource except: [ :index, :new, :create, :get_user_detail, :get_activities, :bulk_create, :submit_achievements, :export, :import, :quarterly_edit_all, :update_quarterly_achievements, :test_sms, :view_sms_logs, :submitted_achievements, :user_data_report, :export_user_data_xlsx ]
 
   private
 
@@ -593,6 +593,254 @@ class UserDetailsController < ApplicationController
     end
     @achievement_entry_locked = current_user.role != "hod" && achievement_entry_locked_for_month?(@user_details, @selected_month)
     @achievement_entry_lock_message = achievement_entry_lock_message if @achievement_entry_locked
+  end
+
+  # ---------------------------------------------------------------------------
+  # User Data Report  – quarter-based per-employee achievement overview
+  # ---------------------------------------------------------------------------
+
+  QUARTER_MONTHS = {
+    "Q1" => %w[april may june],
+    "Q2" => %w[july august september],
+    "Q3" => %w[october november december],
+    "Q4" => %w[january february march]
+  }.freeze
+
+  QUARTER_LABELS = {
+    "Q1" => "Q1 PLI (APR-MAY-JUN)",
+    "Q2" => "Q2 PLI (JUL-AUG-SEP)",
+    "Q3" => "Q3 PLI (OCT-NOV-DEC)",
+    "Q4" => "Q4 PLI (JAN-FEB-MAR)"
+  }.freeze
+
+  MONTH_SHORT = {
+    "april" => "APR", "may" => "MAY", "june" => "JUN",
+    "july" => "JUL", "august" => "AUG", "september" => "SEP",
+    "october" => "OCT", "november" => "NOV", "december" => "DEC",
+    "january" => "JAN", "february" => "FEB", "march" => "MAR"
+  }.freeze
+
+  def user_data_report
+    unless current_user.hod?
+      redirect_to root_path, alert: "Access denied."
+      return
+    end
+    set_financial_year_context
+    @selected_quarter = params[:quarter].presence
+    @selected_quarter = "Q1" unless QUARTER_MONTHS.key?(@selected_quarter)
+    @quarter_months   = QUARTER_MONTHS[@selected_quarter]
+
+    @employee_details = EmployeeDetail.order(:employee_name).to_a
+
+    all_years = UserDetail.distinct.pluck(:financial_year).compact.sort.reverse
+    @financial_years = all_years.presence || [ @selected_financial_year ]
+    @financial_years |= [ @selected_financial_year ]
+    @financial_years = @financial_years.compact.sort.reverse
+  end
+
+  def export_user_data_xlsx
+    unless current_user.hod?
+      redirect_to root_path, alert: "Access denied."
+      return
+    end
+    set_financial_year_context
+
+    employee_detail_id = params[:employee_detail_id].presence
+    quarter = params[:quarter].presence
+    quarter = "Q1" unless QUARTER_MONTHS.key?(quarter)
+    quarter_months = QUARTER_MONTHS[quarter]       # e.g. ["april","may","june"]
+    quarter_label  = QUARTER_LABELS[quarter]        # e.g. "Q1 PLI (APR-MAY-JUN)"
+
+    scope = EmployeeDetail.includes(
+      user_details: [ :activity, :department, { achievements: :achievement_remark } ]
+    ).order(:employee_name)
+    scope = scope.where(id: employee_detail_id) if employee_detail_id.present?
+
+    employee_details = scope.to_a
+    financial_year   = @selected_financial_year
+
+    package = Axlsx::Package.new
+    wb      = package.workbook
+
+    # ── Styles ────────────────────────────────────────────────────────────────
+    header_style = wb.styles.add_style(
+      bg_color: "1F2937", fg_color: "FFFFFF", b: true,
+      alignment: { horizontal: :center, vertical: :center, wrap_text: true },
+      border: { style: :thin, color: "94A3B8" }
+    )
+    cell_style = wb.styles.add_style(
+      alignment: { vertical: :top, wrap_text: true },
+      border: { style: :thin, color: "CBD5E1" }
+    )
+
+    # ── Column headers: always fixed 9 + (6 per month) + 2 quarterly ─────────
+    fixed_headers = [
+      "Employee Code", "Employee Name", "Location", "Department",
+      "OB1 Name", "OB2 Name", "OB3 Name", "OB4 Name", "L1 Name"
+    ]
+
+    monthly_headers = quarter_months.flat_map do |month|
+      label = MONTH_SHORT[month]
+      [
+        "#{label} % Achievement",
+        "#{label} OB1 Remarks",
+        "#{label} OB2 Remarks",
+        "#{label} OB3 Remarks",
+        "#{label} OB4 Remarks",
+        "#{label} L1 Remarks"
+      ]
+    end
+
+    quarterly_headers = [
+      "#{quarter_label} % Achievement",
+      "#{quarter_label} Remarks"
+    ]
+
+    headers = fixed_headers + monthly_headers + quarterly_headers
+    total_cols = headers.size
+    last_col_ref = Axlsx.col_ref(total_cols - 1)
+
+    # ── Worksheet ─────────────────────────────────────────────────────────────
+    wb.add_worksheet(name: "#{quarter} User Data") do |sheet|
+      sheet.add_row(headers, style: header_style, height: 40)
+
+      employee_details.each do |emp|
+        year_details = emp.user_details.select { |ud| ud.financial_year.to_s == financial_year.to_s }
+        next if year_details.empty?
+
+        # ── Build lookup: ud_id → month → achievement (one per KRI per month) ──
+        ach_map = {}
+        year_details.each do |ud|
+          ach_map[ud.id] = {}
+          ud.achievements.each do |a|
+            ach_map[ud.id][a.month.to_s.downcase] = a
+          end
+        end
+
+        # ── Month % = average of (achievement/target × 100) across all KRIs ──
+        month_percent_for = lambda do |month|
+          progress_vals = year_details.filter_map do |ud|
+            target = ud.public_send(month).to_s.to_f
+            next unless target.positive?
+            ach    = ach_map.dig(ud.id, month)
+            achieve = ach&.achievement.to_s.to_f || 0.0
+            (achieve / target) * 100
+          end
+          return "-" if progress_vals.empty?
+          "#{'%.2f' % (progress_vals.sum / progress_vals.size)}%"
+        end
+
+        # ── Remarks: collect from all KRIs, join unique non-blank values ──
+        l1_remarks_for = lambda do |month|
+          remarks = year_details.filter_map do |ud|
+            ach = ach_map.dig(ud.id, month)
+            ach&.achievement_remark&.l1_remarks.to_s.strip.presence
+          end.uniq
+          remarks.any? ? remarks.join(" | ") : "-"
+        end
+
+        obs_remarks_for = lambda do |month, n|
+          remarks = year_details.filter_map do |ud|
+            ach = ach_map.dig(ud.id, month)
+            ach&.achievement_remark&.public_send("obs_code#{n}_remarks").to_s.strip.presence
+          end.uniq
+          remarks.any? ? remarks.join(" | ") : "-"
+        end
+
+        # ── Reviewer names ──────────────────────────────────────────────────
+        obs_name = lambda do |field|
+          code = emp.public_send(field).to_s.strip
+          return "-" if code.blank?
+          EmployeeDetail.find_by("LOWER(TRIM(employee_code)) = ?", code.downcase)&.employee_name.presence || code
+        end
+
+        l1_code = emp.l1_code.to_s.strip
+        l1_name = if l1_code.present?
+          EmployeeDetail.find_by("LOWER(TRIM(employee_code)) = ?", l1_code.downcase)&.employee_name.presence ||
+            emp.l1_employer_name.presence || l1_code
+        else
+          emp.l1_employer_name.presence || "-"
+        end
+
+        # ── Fixed columns ───────────────────────────────────────────────────
+        fixed_values = [
+          emp.employee_code.presence || "-",
+          emp.employee_name.presence || "-",
+          emp.location.presence || "-",
+          emp.department.presence || "-",
+          obs_name.call("obs_code1"),
+          obs_name.call("obs_code2"),
+          obs_name.call("obs_code3"),
+          obs_name.call("obs_code4"),
+          l1_name
+        ]
+
+        # ── Monthly columns (6 per month) ──────────────────────────────────
+        monthly_values = quarter_months.flat_map do |month|
+          [
+            month_percent_for.call(month),
+            obs_remarks_for.call(month, 1),
+            obs_remarks_for.call(month, 2),
+            obs_remarks_for.call(month, 3),
+            obs_remarks_for.call(month, 4),
+            l1_remarks_for.call(month)
+          ]
+        end
+
+        # ── Quarterly PLI % = average of per-month averages ─────────────────
+        q_percent = begin
+          monthly_avgs = quarter_months.filter_map do |m|
+            progress_vals = year_details.filter_map do |ud|
+              t = ud.public_send(m).to_s.to_f
+              next unless t.positive?
+              a = ach_map.dig(ud.id, m)
+              achieve = a&.achievement.to_s.to_f || 0.0
+              (achieve / t) * 100
+            end
+            next if progress_vals.empty?
+            progress_vals.sum / progress_vals.size
+          end
+          monthly_avgs.any? ? "#{'%.2f' % (monthly_avgs.sum / monthly_avgs.size)}%" : "-"
+        end
+
+        # ── Quarterly Remarks = join per-month L1 remarks ───────────────────
+        q_remarks = quarter_months.filter_map do |m|
+          r = l1_remarks_for.call(m)
+          r == "-" ? nil : "#{MONTH_SHORT[m]}: #{r}"
+        end.join(" | ").presence || "-"
+
+        row = fixed_values + monthly_values + [ q_percent, q_remarks ]
+        sheet.add_row(row, style: cell_style, height: 24)
+      end
+
+
+      # Column widths: 9 fixed + 6 per month + 2 quarterly
+      fixed_widths   = [ 16, 28, 18, 22, 22, 22, 22, 22, 22 ]
+      monthly_widths = quarter_months.flat_map { [ 20, 26, 26, 26, 26, 36 ] }
+      quarter_widths = [ 26, 42 ]
+      sheet.column_widths(*(fixed_widths + monthly_widths + quarter_widths))
+
+      sheet.auto_filter = "A1:#{last_col_ref}1"
+      sheet.sheet_view.pane do |pane|
+        pane.top_left_cell = "A2"
+        pane.state = :frozen
+        pane.y_split = 1
+      end
+    end
+
+    filename = if employee_detail_id.present?
+      emp_name = EmployeeDetail.find_by(id: employee_detail_id)&.employee_name.to_s.parameterize
+      "user_data_#{quarter}_#{emp_name}_#{financial_year}.xlsx"
+    else
+      "user_data_#{quarter}_all_employees_#{financial_year}.xlsx"
+    end
+
+    send_data(
+      package.to_stream.read,
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      filename: filename,
+      disposition: "attachment"
+    )
   end
 
   def submit_achievements

@@ -60,6 +60,8 @@ Rails.application.routes.draw do
       get :view_sms_logs
       get :export_department_activity_data
       get :submitted_achievements
+      get :user_data_report
+      get :export_user_data_xlsx
     end
   end
 
