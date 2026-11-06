@@ -866,9 +866,32 @@ class UserDetailsController < ApplicationController
       errors = []
 
 
+      financial_year_for_lock = normalize_financial_year(params[:financial_year]) || @selected_financial_year || current_financial_year
+      selected_submission_month = params[:month].to_s.downcase
+      attachment_files = Array(params[:attachment_files]).reject(&:blank?)
+      attachment_employee = current_user_target_employee_detail
+      existing_attachment = AchievementAttachment.find_by(
+        employee_detail_id: attachment_employee&.id,
+        financial_year: financial_year_for_lock,
+        month: selected_submission_month
+      )
+
+      attachment_error = if selected_submission_month.blank?
+        "Please select a month before submitting."
+      elsif attachment_files.empty? && !existing_attachment&.files&.attached?
+        "Please upload an Excel attachment (.xlsx or .xls) before submitting."
+      elsif attachment_files.size > AchievementAttachment::MAX_FILES
+        "You can upload a maximum of #{AchievementAttachment::MAX_FILES} attachment(s) per submission."
+      elsif attachment_files.any? { |file| !file.respond_to?(:original_filename) || !AchievementAttachment::ALLOWED_EXTENSIONS.include?(File.extname(file.original_filename.to_s).delete(".").downcase) }
+        "Please upload a valid Excel attachment (.xlsx or .xls)."
+      end
+
+      if attachment_error
+        render json: { success: false, message: attachment_error }, status: :unprocessable_entity
+        return
+      end
+
       ActiveRecord::Base.transaction do
-        financial_year_for_lock = normalize_financial_year(params[:financial_year]) || @selected_financial_year || current_financial_year
-        selected_submission_month = params[:month].to_s.downcase
         submitted_user_detail_ids = (achievement_data.keys + target_update_data.keys).map(&:to_s).uniq
         submitted_months = selected_submission_month.present? ? [ selected_submission_month ] : MONTH_ATTRIBUTES.map(&:to_s)
         user_details_by_id = UserDetail.includes(:activity, :employee_detail)
