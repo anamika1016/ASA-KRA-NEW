@@ -167,5 +167,7 @@ Rails.application.routes.draw do
   # Keep your other routes
   devise_scope :user do
     delete "/users/sign_out", to: "devise/sessions#destroy"
+    # ESS (hr.asaindia.org → IT Tools → ASA KRA): signed, 2-minute link that signs the employee in
+    get "/users/ess_sign_in/:employee_code", to: "users/sessions#ess_sign_in", as: :ess_sign_in
   end
 end
